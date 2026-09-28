@@ -13,8 +13,9 @@ sys.path.insert(0, str(ROOT))
 from scripts.fetch_tw_stock_data import fetch_all_symbols
 from src.tw_official_data import latest_reports, selected_history
 
-SCREENING = "bull_pullback_red_v2"
+SCREENING = "bull_pullback_hhhl_v3"
 CRITERIA = {
+    "structure": "Last 60 valid bars; strict pivots with 2 bars each side; alternating pivots; latest two highs and lows strictly rising; latest pivot low not subsequently breached",
     "trend": "close > SMA20 > SMA60; SMA20 rising over 5 bars; SMA60 >= 99.5% of 5 bars ago",
     "pullback": "previous close 3-15% below previous 10-bar high; >=2 declines in previous 5 bars",
     "candle": "close > open and previous close; low >= 99% of previous low; close position >=0.4",
@@ -23,10 +24,41 @@ CRITERIA = {
 }
 
 
+def swing_structure(frame):
+    df = frame.tail(60).reset_index(drop=True)
+    high = df.high.gt(df.high.shift(1)) & df.high.gt(df.high.shift(2)) & df.high.gt(df.high.shift(-1)) & df.high.gt(df.high.shift(-2))
+    low = df.low.lt(df.low.shift(1)) & df.low.lt(df.low.shift(2)) & df.low.lt(df.low.shift(-1)) & df.low.lt(df.low.shift(-2))
+    pivots = []
+    for i in range(2, len(df) - 2):
+        # An outside bar cannot determine the intraday ordering of both pivots.
+        if bool(high.iloc[i]) == bool(low.iloc[i]):
+            continue
+        kind = 'high' if high.iloc[i] else 'low'
+        point = {'kind': kind, 'price': float(df[kind].iloc[i]), 'time': int(df.time.iloc[i]), 'index': i}
+        if pivots and pivots[-1]['kind'] == kind:
+            better = point['price'] > pivots[-1]['price'] if kind == 'high' else point['price'] < pivots[-1]['price']
+            if better:
+                pivots[-1] = point
+        else:
+            pivots.append(point)
+    highs = [p for p in pivots if p['kind'] == 'high'][-2:]
+    lows = [p for p in pivots if p['kind'] == 'low'][-2:]
+    if len(highs) < 2 or len(lows) < 2:
+        return None
+    if not (highs[1]['price'] > highs[0]['price'] and lows[1]['price'] > lows[0]['price']):
+        return None
+    if df.low.iloc[lows[-1]['index'] + 1:].min() < lows[-1]['price']:
+        return None
+    return {'highs': highs, 'lows': lows}
+
+
 def signal(frame):
     df = frame.sort_values("time").drop_duplicates("time", keep="last").dropna().copy()
     df = df[df.tick_volume > 0]
     if len(df) < 65:
+        return None
+    structure = swing_structure(df)
+    if structure is None:
         return None
     close = df.close
     ma = {n: close.rolling(n).mean() for n in (5, 10, 20, 60)}
@@ -49,6 +81,7 @@ def signal(frame):
     volume5 = df.tick_volume.tail(5).mean() / 1000
     volume10 = df.tick_volume.tail(10).mean() / 1000
     return {
+        "structure": structure,
         "close": float(today.close), "open": float(today.open), "high": float(today.high),
         "low": float(today.low), "previous_close": float(yesterday.close),
         "previous_high": float(yesterday.high), "previous_low": float(yesterday.low),
@@ -69,6 +102,7 @@ def write_report(result, path):
     lines = [f"# 多頭回檔紅 K 篩選：{result['date']}", "",
              f"上市櫃普通股；單日成交量至少 {result.get('min_volume_lots', 1500):,} 張，共 {result['liquid_universe']} 檔，其中紅 K {result['red_candidates']} 檔，符合 {len(result['matches'])} 檔。", "",
              "## 篩選條件", "",
+             "- 價格結構：最近 60 根日 K，以左右各 2 根確認波段；最近兩個高點與低點均嚴格提高，最新波段低點未再跌破。",
              "- 中期多頭：收盤 > MA20 > MA60，MA20 高於 5 個交易日前，MA60 五日降幅不超過 0.5%。",
              "- 回檔：前一日收盤相對此前 10 日最高價回落 3% 至 15%，此前 5 日至少 2 日收盤下跌。",
              "- 紅 K 回升觀察：收盤 > 開盤及前日收盤，最低價不低於昨低的 99%，收盤位置至少為當日振幅的 40%。",
@@ -132,7 +166,7 @@ def main():
               "screening": SCREENING, "criteria": CRITERIA,
               "min_volume_lots": 1300, "liquid_universe": len(liquid), "red_candidates": len(candidates),
               "insufficient_history": insufficient, "matches": found}
-    path = ROOT / "output" / f"tw_bull_pullback_{day}_1300lots_v2.json"
+    path = ROOT / "output" / f"tw_bull_pullback_{day}_1300lots_v3.json"
     path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     write_report(result, path.with_suffix(".md"))
     print(json.dumps(result, ensure_ascii=False, indent=2))

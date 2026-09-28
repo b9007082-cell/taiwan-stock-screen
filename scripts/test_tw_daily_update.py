@@ -8,10 +8,16 @@ from unittest.mock import Mock, patch
 import pandas as pd
 from src.tw_daily_update import DailyUpdater
 from src.tw_official_data import parse_report, latest_reports, monthly_history, finmind_history
-from scripts.screen_tw_pullback import signal
+from scripts.screen_tw_pullback import signal, swing_structure
 
 
 class PullbackSignalTests(unittest.TestCase):
+    def setUp(self):
+        # These tests isolate candle/MA thresholds from structural qualification.
+        mock = patch('scripts.screen_tw_pullback.swing_structure', return_value={'highs': [], 'lows': []})
+        mock.start()
+        self.addCleanup(mock.stop)
+
     def frame(self):
         closes = list(range(100, 180)) + [176, 173, 172, 173, 174, 177]
         return pd.DataFrame({"time": range(len(closes)), "close": closes,
@@ -48,6 +54,33 @@ class PullbackSignalTests(unittest.TestCase):
         self.assertIsNone(signal(frame))
 
 
+class StructureTests(unittest.TestCase):
+    def frame(self, values=None):
+        values = values or [10, 11, 14, 12, 11, 9, 10, 12, 16, 14, 12, 11, 12, 13, 14]
+        return pd.DataFrame({'time': range(len(values)), 'high': [v + 0.5 for v in values], 'low': [v - 0.5 for v in values]})
+
+    def test_higher_highs_and_lows(self):
+        result = swing_structure(self.frame())
+        self.assertEqual([p['price'] for p in result['highs']], [14.5, 16.5])
+        self.assertEqual([p['price'] for p in result['lows']], [8.5, 10.5])
+
+    def test_lower_or_equal_high_and_low_fail(self):
+        for column, index, value in [('high', 8, 14.5), ('high', 8, 14), ('low', 11, 8.5), ('low', 11, 8)]:
+            frame = self.frame()
+            frame.loc[index, column] = value
+            self.assertIsNone(swing_structure(frame))
+
+    def test_unconfirmed_and_broken_low_fail(self):
+        self.assertIsNone(swing_structure(self.frame().iloc[:13]))
+        frame = self.frame()
+        frame.loc[14, 'low'] = 10
+        self.assertIsNone(swing_structure(frame))
+
+    def test_signal_requires_structure_even_with_rising_ma(self):
+        frame = PullbackSignalTests().frame()
+        self.assertIsNone(signal(frame))
+
+
 class OfficialDataTests(unittest.TestCase):
     def report(self, market, close="10"):
         fields = (["證券代號", "證券名稱", "開盤價", "最高價", "最低價", "收盤價", "成交股數"]
@@ -74,7 +107,8 @@ class OfficialDataTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 latest_reports(date(2026, 9, 14))
 
-    def test_snapshot_threshold_history_and_archive(self):
+    @patch('scripts.screen_tw_pullback.swing_structure', return_value={'highs': [], 'lows': []})
+    def test_snapshot_threshold_history_and_archive(self, structure):
         rows = [{"code": c, "name": c, "market": m} for c, m in [("2330", "listed"), ("8069", "otc"), ("1101", "listed")]]
         closes = list(range(100, 180)) + [176, 173, 172, 173, 174, 177]
         history = pd.concat([pd.DataFrame({

@@ -16,6 +16,13 @@ function show(stock) {
     term.textContent=label; desc.textContent=typeof value==='number'?number(value):value;
     item.append(term,desc); $('metrics').append(item);
   }
+  if (stock.structure) {
+    for (const [label, points] of [['波段高點',stock.structure.highs],['波段低點',stock.structure.lows]]) {
+      const item=document.createElement('div'), term=document.createElement('dt'), desc=document.createElement('dd');
+      term.textContent=label; desc.textContent=points.map(p=>number(p.price)).join(' → ');
+      item.append(term,desc); $('metrics').append(item);
+    }
+  }
   const bars=data.candles[stock.code];
   if (!window.Plotly) { $('chart').textContent='圖表尚未載入，可先查看數值與下載 CSV。'; return; }
   const dates=bars.map(b=>b.date);
