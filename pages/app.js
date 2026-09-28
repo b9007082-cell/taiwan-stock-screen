@@ -26,6 +26,7 @@ function show(stock) {
   }
   const bars=data.candles[stock.code];
   if (!window.Plotly) { $('chart').textContent='圖表尚未載入，可先查看數值與下載 CSV。'; return; }
+  if (!$('chart').classList.contains('js-plotly-plot')) $('chart').replaceChildren();
   const dates=bars.map(b=>b.date);
   const average=n=>bars.map((b,i)=>i<n-1?null:bars.slice(i-n+1,i+1).reduce((sum,v)=>sum+v.close,0)/n);
   Plotly.react('chart',[
