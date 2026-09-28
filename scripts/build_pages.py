@@ -47,6 +47,8 @@ def build(snapshot, destination):
     # JSON lives in a separate script, so file:// previews need no fetch/server.
     encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False).replace('<', '\\u003c')
     (destination / 'data.js').write_text('window.STOCK_DATA = ' + encoded + ';\n', encoding='utf-8')
+    index = destination / 'index.html'
+    index.write_text(index.read_text(encoding='utf-8').replace('__BUILD__', datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')), encoding='utf-8')
     (destination / '.nojekyll').touch()
     print(f"Built {result['date']}: {len(result['matches'])} stocks")
 
