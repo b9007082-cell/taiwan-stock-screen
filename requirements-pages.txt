@@ -1,0 +1,5 @@
+pandas>=2.2,<4
+pyarrow>=14,<24
+requests>=2.31,<3
+beautifulsoup4>=4.12,<5
+tzdata>=2025.1
