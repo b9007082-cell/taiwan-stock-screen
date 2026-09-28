@@ -13,10 +13,10 @@ sys.path.insert(0, str(ROOT))
 from scripts.fetch_tw_stock_data import fetch_all_symbols
 from src.tw_official_data import latest_reports, selected_history
 
-SCREENING = "bull_pullback_hhhl_v3"
+SCREENING = "bull_pullback_or_ma_v4"
 CRITERIA = {
     "structure": "Last 60 valid bars; strict pivots with 2 bars each side; alternating pivots; latest two highs and lows strictly rising; latest pivot low not subsequently breached",
-    "trend": "close > SMA20 > SMA60; SMA20 rising over 5 bars; SMA60 >= 99.5% of 5 bars ago",
+    "trend": "ANY of: higher highs and higher lows; SMA5 > SMA10 > SMA20; SMA5 > SMA10 > SMA20 > SMA60. No additional MA slope or close-above-MA gate.",
     "pullback": "previous close 3-15% below previous 10-bar high; >=2 declines in previous 5 bars",
     "candle": "close > open and previous close; low >= 99% of previous low; close position >=0.4",
     "minimum_bars": 65,
@@ -52,28 +52,33 @@ def swing_structure(frame):
     return {'highs': highs, 'lows': lows}
 
 
+def bullish_reasons(structure, averages):
+    reasons = ['hhhl'] if structure is not None else []
+    if averages[5] > averages[10] > averages[20]:
+        reasons.append('ma3')
+        if averages[20] > averages[60]:
+            reasons.append('ma4')
+    return reasons
+
+
 def signal(frame):
     df = frame.sort_values("time").drop_duplicates("time", keep="last").dropna().copy()
     df = df[df.tick_volume > 0]
     if len(df) < 65:
         return None
     structure = swing_structure(df)
-    if structure is None:
-        return None
     close = df.close
     ma = {n: close.rolling(n).mean() for n in (5, 10, 20, 60)}
+    reasons = bullish_reasons(structure, {n: ma[n].iloc[-1] for n in ma})
     today, yesterday = df.iloc[-1], df.iloc[-2]
     peak = float(df.high.iloc[-11:-1].max())
     pullback = (1 - yesterday.close / peak) * 100
     declining = int((close.diff().iloc[-6:-1] < 0).sum())
-    bullish = (today.close > ma[20].iloc[-1] > ma[60].iloc[-1]
-               and ma[20].iloc[-1] > ma[20].iloc[-6]
-               and ma[60].iloc[-1] >= ma[60].iloc[-6] * 0.995)
     span = today.high - today.low
     position = (today.close - today.low) / span if span > 0 else 0
     stabilization = (today.close > today.open and today.close > yesterday.close
                      and today.low >= yesterday.low * 0.99 and position >= 0.4)
-    if not (bullish and 3 <= pullback <= 15 and declining >= 2 and stabilization):
+    if not (reasons and 3 <= pullback <= 15 and declining >= 2 and stabilization):
         return None
     dif = close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()
     macd = dif.ewm(span=9, adjust=False).mean()
@@ -82,6 +87,7 @@ def signal(frame):
     volume10 = df.tick_volume.tail(10).mean() / 1000
     return {
         "structure": structure,
+        "bullish_reasons": reasons,
         "close": float(today.close), "open": float(today.open), "high": float(today.high),
         "low": float(today.low), "previous_close": float(yesterday.close),
         "previous_high": float(yesterday.high), "previous_low": float(yesterday.low),
@@ -102,11 +108,11 @@ def write_report(result, path):
     lines = [f"# 多頭回檔紅 K 篩選：{result['date']}", "",
              f"上市櫃普通股；單日成交量至少 {result.get('min_volume_lots', 1500):,} 張，共 {result['liquid_universe']} 檔，其中紅 K {result['red_candidates']} 檔，符合 {len(result['matches'])} 檔。", "",
              "## 篩選條件", "",
-             "- 價格結構：最近 60 根日 K，以左右各 2 根確認波段；最近兩個高點與低點均嚴格提高，最新波段低點未再跌破。",
-             "- 中期多頭：收盤 > MA20 > MA60，MA20 高於 5 個交易日前，MA60 五日降幅不超過 0.5%。",
+             "- 多頭任一成立：頭頭高底底高、三線 MA5 > MA10 > MA20、四線 MA5 > MA10 > MA20 > MA60。",
+             "- 結構分支：最近 60 根日 K，以左右各 2 根確認波段；最近兩個高點與低點均嚴格提高，最新波段低點未再跌破。不另要求均線斜率或收盤高於均線。",
              "- 回檔：前一日收盤相對此前 10 日最高價回落 3% 至 15%，此前 5 日至少 2 日收盤下跌。",
              "- 紅 K 回升觀察：收盤 > 開盤及前日收盤，最低價不低於昨低的 99%，收盤位置至少為當日振幅的 40%。",
-             "- 至少 65 根有效日 K；不是要求短期 5 > 10 > 20 完整多頭排列。", "",
+             "- 至少 65 根有效日 K；多頭三項以 OR 判斷，回檔與紅 K 條件仍須同時滿足。", "",
              "## 候選名單", "", "| 股票 | 收盤 | 成交量（張） | 紅K低點 | 已收復昨高 |",
              "|---|---:|---:|---:|---|"]
     for r in result["matches"]:
@@ -166,7 +172,7 @@ def main():
               "screening": SCREENING, "criteria": CRITERIA,
               "min_volume_lots": 1300, "liquid_universe": len(liquid), "red_candidates": len(candidates),
               "insufficient_history": insufficient, "matches": found}
-    path = ROOT / "output" / f"tw_bull_pullback_{day}_1300lots_v3.json"
+    path = ROOT / "output" / f"tw_bull_pullback_{day}_1300lots_v4.json"
     path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     write_report(result, path.with_suffix(".md"))
     print(json.dumps(result, ensure_ascii=False, indent=2))

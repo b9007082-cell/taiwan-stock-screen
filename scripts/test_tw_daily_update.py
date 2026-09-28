@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 from src.tw_daily_update import DailyUpdater
 from src.tw_official_data import parse_report, latest_reports, monthly_history, finmind_history
-from scripts.screen_tw_pullback import signal, swing_structure
+from scripts.screen_tw_pullback import signal, swing_structure, bullish_reasons
 
 
 class PullbackSignalTests(unittest.TestCase):
@@ -43,7 +43,7 @@ class PullbackSignalTests(unittest.TestCase):
         frame.loc[85, "open"] = frame.loc[85, "close"]
         self.assertIsNone(signal(frame))
 
-    def test_ma60_flat_tolerance(self):
+    def test_structure_branch_does_not_require_ma_slope(self):
         frame = self.frame()
         # These five bars leave the 60-bar window during the slope comparison.
         frame.loc[21:25, "close"] += 52
@@ -51,7 +51,30 @@ class PullbackSignalTests(unittest.TestCase):
         self.assertLess(ma.iloc[-1], ma.iloc[-6])
         self.assertIsNotNone(signal(frame))
         frame.loc[21:25, "close"] += 20
-        self.assertIsNone(signal(frame))
+        self.assertIsNotNone(signal(frame))
+
+    def test_ma_branch_without_structure(self):
+        frame = self.frame()
+        values = [182, 177, 175, 174, 179]
+        for column, offset in [('close', 0), ('open', -1), ('high', 1), ('low', -2)]:
+            frame.loc[81:85, column] = [v + offset for v in values]
+        with patch('scripts.screen_tw_pullback.swing_structure', return_value=None):
+            result = signal(frame)
+            self.assertIsNotNone(result)
+            self.assertIsNone(result['structure'])
+            self.assertEqual(result['bullish_reasons'], ['ma3', 'ma4'])
+            frame.loc[85, 'open'] = frame.loc[85, 'close']
+            self.assertIsNone(signal(frame))
+
+
+class BullishOrTests(unittest.TestCase):
+    def test_independent_branches_and_strict_order(self):
+        self.assertEqual(bullish_reasons({}, {5: 1, 10: 2, 20: 3, 60: 4}), ['hhhl'])
+        self.assertEqual(bullish_reasons(None, {5: 4, 10: 3, 20: 2, 60: 5}), ['ma3'])
+        self.assertEqual(bullish_reasons(None, {5: 4, 10: 3, 20: 2, 60: 1}), ['ma3', 'ma4'])
+        self.assertEqual(bullish_reasons({}, {5: 4, 10: 3, 20: 2, 60: 1}), ['hhhl', 'ma3', 'ma4'])
+        for values in ({5: 3, 10: 3, 20: 2, 60: 1}, {5: 4, 10: 2, 20: 2, 60: 1}, {5: 1, 10: 2, 20: 3, 60: 4}):
+            self.assertEqual(bullish_reasons(None, values), [])
 
 
 class StructureTests(unittest.TestCase):
@@ -76,7 +99,7 @@ class StructureTests(unittest.TestCase):
         frame.loc[14, 'low'] = 10
         self.assertIsNone(swing_structure(frame))
 
-    def test_signal_requires_structure_even_with_rising_ma(self):
+    def test_signal_rejects_when_no_trend_branch_matches(self):
         frame = PullbackSignalTests().frame()
         self.assertIsNone(signal(frame))
 

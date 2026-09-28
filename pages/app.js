@@ -11,7 +11,8 @@ function show(stock) {
   $('csv').hidden = false;
   $('csv').href = `downloads/${stock.code}_D1.csv`;
   $('metrics').replaceChildren();
-  for (const [label, value] of [['MA20',stock.ma['20']],['MA60',stock.ma['60']],['昨收',stock.previous_close],['紅 K 高點',stock.high],['紅 K 低點',stock.low],['近六日低點',stock.pullback_low],['回檔幅度',`${stock.pullback_pct}%`],['收盤位置',`${number(stock.close_position*100)}%`],['歷史日 K',stock.data_bars]]) {
+  const labels={hhhl:'頭頭高底底高',ma3:'三線多排',ma4:'四線多排'};
+  for (const [label, value] of [['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['MA5',stock.ma['5']],['MA10',stock.ma['10']],['MA20',stock.ma['20']],['MA60',stock.ma['60']],['昨收',stock.previous_close],['紅 K 高點',stock.high],['紅 K 低點',stock.low],['近六日低點',stock.pullback_low],['回檔幅度',`${stock.pullback_pct}%`],['收盤位置',`${number(stock.close_position*100)}%`],['歷史日 K',stock.data_bars]]) {
     const item=document.createElement('div'), term=document.createElement('dt'), desc=document.createElement('dd');
     term.textContent=label; desc.textContent=typeof value==='number'?number(value):value;
     item.append(term,desc); $('metrics').append(item);
@@ -29,6 +30,8 @@ function show(stock) {
   const average=n=>bars.map((b,i)=>i<n-1?null:bars.slice(i-n+1,i+1).reduce((sum,v)=>sum+v.close,0)/n);
   Plotly.react('chart',[
     {type:'candlestick',x:dates,open:bars.map(b=>b.open),high:bars.map(b=>b.high),low:bars.map(b=>b.low),close:bars.map(b=>b.close),name:'日 K',increasing:{line:{color:'#c84750'}},decreasing:{line:{color:'#25836b'}}},
+    {type:'scatter',mode:'lines',x:dates,y:average(5),name:'MA5',line:{color:'#966690',width:1}},
+    {type:'scatter',mode:'lines',x:dates,y:average(10),name:'MA10',line:{color:'#647370',width:1}},
     {type:'scatter',mode:'lines',x:dates,y:average(20),name:'MA20',line:{color:'#ba851a',width:1.5}},
     {type:'scatter',mode:'lines',x:dates,y:average(60),name:'MA60',line:{color:'#537abc',width:1.5}}
   ],{margin:{t:15,l:44,r:12,b:38},paper_bgcolor:'#f5f7f7',plot_bgcolor:'#f5f7f7',font:{family:'system-ui',color:'#526363'},xaxis:{type:'category',nticks:5,rangeslider:{visible:false}},yaxis:{fixedrange:true,gridcolor:'#dfe6e5'},legend:{orientation:'h',y:1.12},showlegend:true},{responsive:true,displayModeBar:false});
