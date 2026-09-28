@@ -3,6 +3,7 @@ const $ = id => document.getElementById(id);
 const data = window.STOCK_DATA;
 const number = value => Number(value).toLocaleString('zh-TW', {maximumFractionDigits: 3});
 let selected;
+window.addEventListener('chart-ready', () => { if (data && selected) show(data.matches.find(s => s.code === selected)); });
 function show(stock) {
   selected = stock.code;
   for (const row of $('rows').children) row.classList.toggle('active', row.dataset.code === selected);

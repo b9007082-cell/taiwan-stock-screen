@@ -23,7 +23,7 @@ GitHub 排程可能延後；公開儲存庫長期沒有活動時排程可能被�
 .\.venv\Scripts\python.exe scripts/build_pages.py --snapshot data/tw_daily/<成功批次>
 ```
 
-產物 `_site/index.html` 可直接開啟。日 K 圖使用 Plotly CDN，需要網路；載入失敗時仍可看數值與下載。
+產物 `_site/index.html` 可直接開啟。日 K 圖使用隨站附帶的 Plotly 元件，不依賴外部 CDN。
 不指定 `--snapshot` 時會重新抓取最新完整交易日，供 Actions 使用。
 請勿把 `.venv`、`.cache`、本機 `data/`、`output/` 或 `.data_dir.txt` 加入公開提交。
 

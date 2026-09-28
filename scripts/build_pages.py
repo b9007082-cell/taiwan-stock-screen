@@ -25,6 +25,8 @@ def build(snapshot, destination):
     for asset in (ROOT / 'pages').iterdir():
         if asset.is_file():
             shutil.copy2(asset, destination / asset.name)
+        elif asset.is_dir():
+            shutil.copytree(asset, destination / asset.name, dirs_exist_ok=True)
     downloads = destination / 'downloads'
     downloads.mkdir(exist_ok=True)
     candles = {}
