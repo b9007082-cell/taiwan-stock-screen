@@ -5,6 +5,27 @@ const number = value => Number(value).toLocaleString('zh-TW', {maximumFractionDi
 const nullable = value => value == null ? '—' : number(value);
 const probability = value => value == null ? '—' : `${number(value * 100)}%`;
 let selected;
+let visibleBars = 0;
+function zoomChart(action) {
+  if (!window.Plotly || !selected) return;
+  const count = data.candles[selected].length;
+  const minimum = Math.min(20, count);
+  visibleBars = action === 'reset' ? count : Math.max(minimum, Math.min(count,
+    action === 'in' ? Math.ceil(visibleBars * 0.8) : Math.ceil(visibleBars / 0.8)));
+  Plotly.relayout('chart', {'xaxis.autorange':false, 'xaxis.range':[count-visibleBars-0.5,count-0.5]});
+  updateZoomButtons(count);
+}
+function updateZoomButtons(count) {
+  $('zoom-in').disabled = visibleBars <= Math.min(20, count);
+  $('zoom-out').disabled = visibleBars >= count;
+  $('zoom-reset').disabled = visibleBars >= count;
+}
+for (const action of ['in','out','reset']) $('zoom-'+action).addEventListener('click', () => zoomChart(action));
+const touchChart = window.matchMedia('(any-pointer: coarse), (max-width: 850px)');
+touchChart.addEventListener('change', () => {
+  const stock = data?.matches.find(s => s.code === selected);
+  if (stock) show(stock);
+});
 window.addEventListener('chart-ready', () => { if (data && selected) show(data.matches.find(s => s.code === selected)); });
 function show(stock) {
   selected = stock.code;
@@ -33,9 +54,12 @@ function show(stock) {
     }
   }
   const bars=data.candles[stock.code];
+  for (const action of ['in','out','reset']) $('zoom-'+action).disabled = true;
   if (!window.Plotly) { $('chart').textContent='圖表尚未載入，可先查看數值與下載 CSV。'; return; }
   if (!$('chart').classList.contains('js-plotly-plot')) $('chart').replaceChildren();
   const dates=bars.map(b=>b.date);
+  visibleBars = bars.length;
+  updateZoomButtons(bars.length);
   const average=n=>bars.map((b,i)=>i<n-1?null:bars.slice(i-n+1,i+1).reduce((sum,v)=>sum+v.close,0)/n);
   Plotly.react('chart',[
     {type:'candlestick',x:dates,open:bars.map(b=>b.open),high:bars.map(b=>b.high),low:bars.map(b=>b.low),close:bars.map(b=>b.close),name:'日 K',increasing:{line:{color:'#c84750'}},decreasing:{line:{color:'#25836b'}}},
@@ -43,7 +67,7 @@ function show(stock) {
     {type:'scatter',mode:'lines',x:dates,y:average(10),name:'MA10',line:{color:'#647370',width:1}},
     {type:'scatter',mode:'lines',x:dates,y:average(20),name:'MA20',line:{color:'#ba851a',width:1.5}},
     {type:'scatter',mode:'lines',x:dates,y:average(60),name:'MA60',line:{color:'#537abc',width:1.5}}
-  ],{margin:{t:15,l:44,r:12,b:38},paper_bgcolor:'#f5f7f7',plot_bgcolor:'#f5f7f7',font:{family:'system-ui',color:'#526363'},xaxis:{type:'category',nticks:5,rangeslider:{visible:false}},yaxis:{fixedrange:true,gridcolor:'#dfe6e5'},legend:{orientation:'h',y:1.12},showlegend:true},{responsive:true,displayModeBar:false});
+  ],{margin:{t:15,l:44,r:12,b:38},paper_bgcolor:'#f5f7f7',plot_bgcolor:'#f5f7f7',font:{family:'system-ui',color:'#526363'},dragmode:false,xaxis:{type:'category',nticks:5,rangeslider:{visible:false},fixedrange:true,autorange:true},yaxis:{fixedrange:true,autorange:true,gridcolor:'#dfe6e5'},legend:{orientation:'h',y:1.12},showlegend:true},{responsive:true,displayModeBar:false,scrollZoom:false,doubleClick:false,staticPlot:touchChart.matches});
 }
 function render() {
   const query=$('search').value.trim().toLowerCase(), market=$('market').value, sort=$('sort').value;
@@ -63,7 +87,7 @@ function render() {
     $('rows').append(row);
   }
   if(matches.length) show(matches.find(s=>s.code===selected)||matches[0]);
-  else { selected=null; $('stock-title').textContent='沒有符合的股票'; $('csv').hidden=true; $('metrics').replaceChildren(); if(window.Plotly) Plotly.purge('chart'); $('chart').replaceChildren(); }
+  else { selected=null; $('stock-title').textContent='沒有符合的股票'; $('csv').hidden=true; $('metrics').replaceChildren(); if(window.Plotly) Plotly.purge('chart'); $('chart').replaceChildren(); for (const action of ['in','out','reset']) $('zoom-'+action).disabled=true; }
 }
 if(!data) { $('status').textContent='資料載入失敗，請重新整理或稍後再試。'; document.querySelector('.download').hidden=true; }
 else {
