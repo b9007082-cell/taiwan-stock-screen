@@ -2,6 +2,8 @@
 const $ = id => document.getElementById(id);
 const data = window.STOCK_DATA;
 const number = value => Number(value).toLocaleString('zh-TW', {maximumFractionDigits: 3});
+const nullable = value => value == null ? '—' : number(value);
+const probability = value => value == null ? '—' : `${number(value * 100)}%`;
 let selected;
 window.addEventListener('chart-ready', () => { if (data && selected) show(data.matches.find(s => s.code === selected)); });
 function show(stock) {
@@ -11,6 +13,12 @@ function show(stock) {
   $('csv').hidden = false;
   $('csv').href = `downloads/${stock.code}_D1.csv`;
   $('metrics').replaceChildren();
+  const analysis=stock.analysis || {};
+  for (const [label,value] of [['觸及機率',probability(analysis.p_touch)],['守住機率',probability(analysis.p_hold)],['歷史被測試',analysis.n_events == null ? '—' : `${analysis.n_events} 次`],['趨勢',analysis.trend_label || '—'],['最近支撐',nullable(analysis.nearest_support)],['最近壓力',nullable(analysis.nearest_resistance)],['距離',analysis.nearest_distance_atr == null ? '—' : `${number(Math.abs(analysis.nearest_distance_atr))} ATR`],['關鍵位',nullable(analysis.n_zones)]]) {
+    const item=document.createElement('div'), term=document.createElement('dt'), desc=document.createElement('dd');
+    term.textContent=label; desc.textContent=value; item.append(term,desc); $('metrics').append(item);
+  }
+  if(analysis.error) { const warning=document.createElement('div'); warning.textContent=analysis.error; $('metrics').append(warning); }
   const labels={hhhl:'頭頭高底底高',ma3:'三線多排',ma4:'四線多排'};
   for (const [label, value] of [['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['MA5',stock.ma['5']],['MA10',stock.ma['10']],['MA20',stock.ma['20']],['MA60',stock.ma['60']],['昨收',stock.previous_close],['紅 K 高點',stock.high],['紅 K 低點',stock.low],['近六日低點',stock.pullback_low],['回檔幅度',`${stock.pullback_pct}%`],['收盤位置',`${number(stock.close_position*100)}%`],['歷史日 K',stock.data_bars]]) {
     const item=document.createElement('div'), term=document.createElement('dt'), desc=document.createElement('dd');
@@ -40,14 +48,18 @@ function show(stock) {
 function render() {
   const query=$('search').value.trim().toLowerCase(), market=$('market').value, sort=$('sort').value;
   const matches=data.matches.filter(s=>(!market||s.market===market)&&`${s.code} ${s.name}`.toLowerCase().includes(query))
-    .sort((a,b)=>sort==='code'?a.code.localeCompare(b.code):b[sort]-a[sort]);
+    .sort((a,b)=>sort==='code'?a.code.localeCompare(b.code):((b.analysis?.[sort] ?? b[sort] ?? -Infinity) - (a.analysis?.[sort] ?? a[sort] ?? -Infinity)) || a.code.localeCompare(b.code));
   $('rows').replaceChildren(); $('empty').hidden=matches.length>0;
   for (const stock of matches) {
     const row=document.createElement('tr'); row.dataset.code=stock.code;
     const cell=document.createElement('td'), button=document.createElement('button'), sub=document.createElement('small');
     button.textContent=`${stock.code} ${stock.name}`; button.addEventListener('click',()=>show(stock));
     sub.textContent=stock.market==='listed'?'上市':'上櫃'; cell.append(button,sub); row.append(cell);
-    for(const value of [number(stock.close),number(stock.volume_lots),`${stock.pullback_pct}%`]) { const td=document.createElement('td'); td.textContent=value; row.append(td); }
+    const a=stock.analysis || {};
+    if(a.error) { sub.textContent+=' · 分析失敗'; sub.title=a.error; }
+    const change=a.change_pct ?? (stock.previous_close > 0 ? (stock.close/stock.previous_close-1)*100 : null);
+    const values=[nullable(a.current_price ?? stock.close),change == null?'—':`${change>=0?'+':''}${number(change)}%`,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),number(stock.volume_lots),`${stock.pullback_pct}%`];
+    for(const [i,value] of values.entries()) { const td=document.createElement('td'); td.textContent=value; if(i===1 && change!=null) td.className=change>=0?'price-up':'price-down'; row.append(td); }
     $('rows').append(row);
   }
   if(matches.length) show(matches.find(s=>s.code===selected)||matches[0]);

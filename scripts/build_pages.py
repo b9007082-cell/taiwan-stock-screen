@@ -4,6 +4,7 @@ import json
 import shutil
 import sys
 import tempfile
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.tw_daily_update import DailyUpdater
 from scripts.screen_tw_pullback import SCREENING
+from src.pages_analysis import analyze_stock
 
 
 def build(snapshot, destination):
@@ -35,11 +37,23 @@ def build(snapshot, destination):
         if not (code.isdigit() and len(code) == 4):
             raise ValueError('Invalid stock code')
         frame = pd.read_parquet(snapshot / f'{code}_D1.parquet').sort_values('time')
+        try:
+            stock['analysis'] = analyze_stock(snapshot, code)
+        except Exception as exc:
+            stock['analysis'] = {'error': f'分析失敗（{type(exc).__name__}）', 'zones': []}
         frame['date'] = pd.to_datetime(frame.time, unit='s').dt.strftime('%Y-%m-%d')
         candles[code] = frame[['date', 'open', 'high', 'low', 'close', 'tick_volume']].to_dict('records')
         shutil.copy2(snapshot / f'{code}_D1.csv', downloads / f'{code}_D1.csv')
     archive = snapshot / f"tw_stock_{result['date']}_1300lots.zip"
     shutil.copy2(archive, downloads / 'stocks.zip')
+    analysis = [{'code': s['code'], 'name': s['name'], **s['analysis']} for s in result['matches']]
+    (downloads / 'analysis.json').write_text(json.dumps(analysis, ensure_ascii=False, allow_nan=False), encoding='utf-8')
+    fields = ['code', 'name', 'current_price', 'change_pct', 'p_touch', 'p_hold', 'n_events', 'trend_label',
+              'nearest_distance_atr', 'nearest_support', 'nearest_resistance', 'n_zones', 'error']
+    pd.DataFrame(analysis).reindex(columns=fields).to_csv(downloads / 'analysis.csv', index=False, encoding='utf-8-sig')
+    with zipfile.ZipFile(downloads / 'stocks.zip', 'a', zipfile.ZIP_DEFLATED) as bundle:
+        for name in ('analysis.json', 'analysis.csv'):
+            bundle.write(downloads / name, name)
     for name in ('tw_stock_symbols.csv', 'fetch_errors.csv'):
         shutil.copy2(snapshot / name, downloads / name)
     payload = {**result, 'source': source, 'candles': candles,

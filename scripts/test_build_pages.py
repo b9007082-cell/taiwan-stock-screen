@@ -3,11 +3,48 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
 from scripts.build_pages import build
 from scripts.screen_tw_pullback import SCREENING
+from src.pages_analysis import analyze_stock
+from src.sr_engine import SREngine, build_summary
+from src.local_data_loader import load_kline
+
+
+class AnalysisTests(unittest.TestCase):
+    def frame(self):
+        return pd.DataFrame({'close': [100.] * 64 + [105.], 'pct_chg': [0.] * 64 + [5.]})
+
+    def test_absent_levels_preserve_nulls(self):
+        with patch('src.pages_analysis.load_kline', return_value=self.frame()), patch('src.pages_analysis.SREngine') as engine:
+            engine.return_value.detect.return_value = ([], {'prob_ready': False})
+            result = analyze_stock('unused', '2338')
+        self.assertEqual(result['change_pct'], 5.)
+        self.assertEqual(result['n_zones'], 0)
+        for key in ('p_touch', 'p_hold', 'n_events', 'nearest_distance_atr', 'nearest_support', 'nearest_resistance'):
+            self.assertIsNone(result[key])
+
+    def test_same_engine_and_nearest_support_mapping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            closes = [100 + i * 0.15 + (i % 12 - 6) * 0.6 for i in range(123)]
+            pd.DataFrame({'time': [1790208000 + i * 86400 for i in range(123)],
+                          'open': closes, 'high': [c+1 for c in closes], 'low': [c-1 for c in closes],
+                          'close': closes, 'tick_volume': 2000000}).to_parquet(path / '2338_D1.parquet')
+            df = load_kline(str(path), '2338', 'D1')
+            zones, info = SREngine(n_zones=6).detect(df, '2338')
+            nearest = build_summary(zones, df, 'long', info).get('nearest') or {}
+            actual = analyze_stock(path, '2338')
+            self.assertNotIn('error', actual)
+            self.assertEqual(actual['n_zones'], len(zones))
+            self.assertEqual(actual['p_touch'], nearest.get('p_touch'))
+            self.assertEqual(actual['p_hold'], nearest.get('p_hold'))
+            self.assertEqual(actual['n_events'], nearest.get('n_events'))
+            self.assertEqual(actual['nearest_distance_atr'], nearest.get('distance_atr'))
+            self.assertEqual(actual['change_pct'], round((closes[-1]/closes[-2]-1)*100, 2))
 
 
 class PagesTests(unittest.TestCase):
@@ -27,6 +64,9 @@ class PagesTests(unittest.TestCase):
             build(path, path / 'site')
             self.assertTrue((path / 'site/index.html').exists())
             self.assertTrue((path / 'site/downloads/stocks.zip').exists())
+            with zipfile.ZipFile(path / 'site/downloads/stocks.zip') as bundle:
+                self.assertEqual(json.loads(bundle.read('analysis.json')), [])
+                self.assertIn('p_touch', bundle.read('analysis.csv').decode('utf-8-sig'))
             text = (path / 'site/data.js').read_text(encoding='utf-8')
             self.assertNotIn(str(path), text)
             self.assertIn('"matches": []', text)
@@ -43,6 +83,8 @@ class PagesTests(unittest.TestCase):
             self.assertNotIn('</script>', text)
             self.assertIn('2026-09-24', text)
             self.assertTrue((path / 'site/downloads/2338_D1.csv').exists())
+            analysis = json.loads((path / 'site/downloads/analysis.json').read_text(encoding='utf-8'))
+            self.assertIn('error', analysis[0])
 
     def test_old_screening_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

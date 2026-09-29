@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['pages/**', 'scripts/build_pages.py', 'scripts/screen_tw_pullback.py', 'scripts/fetch_tw_stock_data.py', 'scripts/test_tw_daily_update.py', 'scripts/test_build_pages.py', 'src/tw_daily_update.py', 'src/tw_official_data.py', 'requirements-pages.txt', '.github/workflows/daily-pages.yml']
+    paths: ['pages/**', 'scripts/build_pages.py', 'scripts/screen_tw_pullback.py', 'scripts/fetch_tw_stock_data.py', 'scripts/test_tw_daily_update.py', 'scripts/test_build_pages.py', 'src/**', 'data/prob_models.json', 'data/score_calibration.json', 'requirements-pages.txt', '.github/workflows/daily-pages.yml']
   schedule:
     # 16:30 Asia/Taipei, Monday-Friday. Holidays use the latest complete day.
     - cron: '30 8 * * 1-5'
