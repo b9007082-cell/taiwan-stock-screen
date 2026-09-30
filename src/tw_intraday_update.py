@@ -174,7 +174,7 @@ class IntradayUpdater:
                 "kd_k": metrics["kd_k"], "kd_d": metrics["kd_d"],
                 "kd_golden_cross": metrics["kd_golden_cross"],
                 "macd_red_bar": metrics["macd_red_bar"],
-                "ma20_reclaimed_within_3d": metrics["ma20_reclaimed_within_3d"],
+                "above_ma20": metrics["above_ma20"],
                 "pullback_pct": metrics["pullback_pct"],
                 "prior_declining_days": metrics["prior_declining_days"],
                 "reclaimed_previous_high": metrics["reclaimed_previous_high"],

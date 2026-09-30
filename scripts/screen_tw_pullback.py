@@ -13,10 +13,10 @@ sys.path.insert(0, str(ROOT))
 from scripts.fetch_tw_stock_data import fetch_all_symbols
 from src.tw_official_data import latest_reports, selected_history
 
-SCREENING = "bull_pullback_or_ma_v6"
+SCREENING = "bull_pullback_or_ma_v7"
 CRITERIA = {
     "structure": "Last 60 valid bars; strict pivots with 2 bars each side; alternating pivots; latest two highs and lows strictly rising; latest pivot low not subsequently breached",
-    "trend": "At least one of the latest 3 closes must be above its SMA20, plus ANY of: higher highs and higher lows; SMA5 > SMA10 > SMA20; SMA5 > SMA10 > SMA20 > SMA60. No additional MA slope gate.",
+    "trend": "The latest close (current price for intraday) must be strictly above its SMA20, plus ANY of: higher highs and higher lows; SMA5 > SMA10 > SMA20; SMA5 > SMA10 > SMA20 > SMA60. No additional MA slope gate.",
     "pullback": "previous close 3-15% below previous 10-bar high; >=2 declines in previous 5 bars",
     "candle": "close > open and previous close; low >= 99% of previous low; close position >=0.4",
     "minimum_bars": 65,
@@ -94,10 +94,12 @@ def technical_indicators(frame):
     }
 
 
-def ma20_reclaimed_within_3d(close):
-    """Allow a break below MA20 only while one of the latest 3 bars is above it."""
+def above_ma20(close):
+    """Require the latest price to be strictly above its current 20-bar mean."""
+    if len(close) < 20:
+        return False
     monthly = close.rolling(20).mean()
-    return bool((close.tail(3) > monthly.tail(3)).any())
+    return bool(close.iloc[-1] > monthly.iloc[-1])
 
 
 def signal(frame):
@@ -117,8 +119,8 @@ def signal(frame):
     position = (today.close - today.low) / span if span > 0 else 0
     stabilization = (today.close > today.open and today.close > yesterday.close
                      and today.low >= yesterday.low * 0.99 and position >= 0.4)
-    reclaimed_ma20 = ma20_reclaimed_within_3d(close)
-    if not (reasons and reclaimed_ma20 and 3 <= pullback <= 15 and declining >= 2 and stabilization):
+    above_monthly = above_ma20(close)
+    if not (reasons and above_monthly and 3 <= pullback <= 15 and declining >= 2 and stabilization):
         return None
     indicators = technical_indicators(df)
     volume5 = df.tick_volume.tail(5).mean() / 1000
@@ -132,7 +134,7 @@ def signal(frame):
         "volume_lots": float(today.tick_volume / 1000), "pullback_pct": round(pullback, 2),
         "prior_declining_days": declining, "close_position": round(position, 3),
         "ma": {str(n): round(float(ma[n].iloc[-1]), 3) for n in ma},
-        "ma20_reclaimed_within_3d": reclaimed_ma20,
+        "above_ma20": above_monthly,
         **indicators,
         "volume5_lots": round(float(volume5), 2), "volume10_lots": round(float(volume10), 2),
         "prior_peak": peak, "pullback_low": float(df.low.tail(6).min()),
@@ -145,7 +147,7 @@ def write_report(result, path):
     lines = [f"# 多頭回檔紅 K 篩選：{result['date']}", "",
              f"上市櫃普通股；單日成交量至少 {result.get('min_volume_lots', 1500):,} 張，共 {result['liquid_universe']} 檔，其中紅 K {result['red_candidates']} 檔，符合 {len(result['matches'])} 檔。", "",
              "## 篩選條件", "",
-             "- 跌破月線 MA20 時須在 3 個交易日內站回；亦即最近 3 根 K 至少一根收盤高於當日 MA20。並且多頭任一成立：頭頭高底底高、三線 MA5 > MA10 > MA20、四線 MA5 > MA10 > MA20 > MA60。",
+             "- 最新收盤價必須嚴格高於當日月線 MA20（盤中採當下最新價）；等於或低於月線均不入選。並且多頭任一成立：頭頭高底底高、三線 MA5 > MA10 > MA20、四線 MA5 > MA10 > MA20 > MA60。",
              "- 結構分支：最近 60 根日 K，以左右各 2 根確認波段；最近兩個高點與低點均嚴格提高，最新波段低點未再跌破。不另要求均線斜率。",
              "- 回檔：前一日收盤相對此前 10 日最高價回落 3% 至 15%，此前 5 日至少 2 日收盤下跌。",
              "- 紅 K 回升觀察：收盤 > 開盤及前日收盤，最低價不低於昨低的 99%，收盤位置至少為當日振幅的 40%。",
