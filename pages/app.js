@@ -41,7 +41,11 @@ function show(stock) {
   }
   if(analysis.error) { const warning=document.createElement('div'); warning.textContent=analysis.error; $('metrics').append(warning); }
   const labels={hhhl:'頭頭高底底高',ma3:'三線多排',ma4:'四線多排'};
-  for (const [label, value] of [['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['MA5',stock.ma['5']],['MA10',stock.ma['10']],['MA20',stock.ma['20']],['MA60',stock.ma['60']],['昨收',stock.previous_close],['紅 K 高點',stock.high],['紅 K 低點',stock.low],['近六日低點',stock.pullback_low],['回檔幅度',`${stock.pullback_pct}%`],['收盤位置',`${number(stock.close_position*100)}%`],['歷史日 K',stock.data_bars]]) {
+  const ma=stock.ma || {};
+  const details = data.is_intraday
+    ? [['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['成交量門檻','已達 1,300 張'],['回檔幅度',`${stock.pullback_pct}%`],['歷史日 K',stock.data_bars]]
+    : [['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['MA5',ma['5']],['MA10',ma['10']],['MA20',ma['20']],['MA60',ma['60']],['昨收',stock.previous_close],['紅 K 高點',stock.high],['紅 K 低點',stock.low],['近六日低點',stock.pullback_low],['回檔幅度',`${stock.pullback_pct}%`],['收盤位置',`${number(stock.close_position*100)}%`],['歷史日 K',stock.data_bars]];
+  for (const [label, value] of details) {
     const item=document.createElement('div'), term=document.createElement('dt'), desc=document.createElement('dd');
     term.textContent=label; desc.textContent=typeof value==='number'?number(value):value;
     item.append(term,desc); $('metrics').append(item);
@@ -81,8 +85,8 @@ function render() {
     sub.textContent=stock.market==='listed'?'上市':'上櫃'; cell.append(button,sub); row.append(cell);
     const a=stock.analysis || {};
     if(a.error) { sub.textContent+=' · 分析失敗'; sub.title=a.error; }
-    const change=a.change_pct ?? (stock.previous_close > 0 ? (stock.close/stock.previous_close-1)*100 : null);
-    const values=[nullable(a.current_price ?? stock.close),change == null?'—':`${change>=0?'+':''}${number(change)}%`,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),number(stock.volume_lots),`${stock.pullback_pct}%`];
+    const change=data.is_intraday ? null : (a.change_pct ?? (stock.previous_close > 0 ? (stock.close/stock.previous_close-1)*100 : null));
+    const values=[data.is_intraday?'—':nullable(a.current_price ?? stock.close),change == null?'—':`${change>=0?'+':''}${number(change)}%`,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?'≥1,300':number(stock.volume_lots),`${stock.pullback_pct}%`];
     for(const [i,value] of values.entries()) { const td=document.createElement('td'); td.textContent=value; if(i===1 && change!=null) td.className=change>=0?'price-up':'price-down'; row.append(td); }
     $('rows').append(row);
   }
@@ -93,7 +97,11 @@ if(!data) { $('status').textContent='資料載入失敗，請重新整理或稍�
 else {
   $('date').textContent=data.date; $('count').textContent=`${data.matches.length} 檔`;
   const age=Math.floor((Date.now()-new Date(`${data.date}T00:00:00+08:00`).getTime())/86400000);
-  $('status').textContent=`成交量達標 ${data.liquid_universe} 檔 · 紅 K ${data.red_candidates} 檔 · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
+  const asOf=data.as_of?new Date(data.as_of).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'}):'';
+  $('status').textContent=data.is_intraday
+    ? `盤中暫定（截至 ${asOf}）· 累積量達 1,300 張 ${data.liquid_universe} 檔 · 紅 K ${data.red_candidates} 檔 · 13:30 收盤前條件仍可能改變。`
+    : `成交量達標 ${data.liquid_universe} 檔 · 紅 K ${data.red_candidates} 檔 · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
+  if(data.is_intraday) $('analysis-note').textContent='本頁為盤中暫定篩選結果；成交量門檻固定為累積 1,300 張。依資料來源授權，公開頁不顯示 FinMind 即時價量原始欄位；圖表、支撐壓力與機率以最近完整收盤資料計算。13:30 收盤前結果仍可能改變。';
   $('built').textContent=`網頁產生時間 ${new Date(data.built_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})}（台灣）`;
   for(const id of ['search','market','sort']) $(id).addEventListener(id==='search'?'input':'change',render);
   render();

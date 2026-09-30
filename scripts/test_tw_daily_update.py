@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import pandas as pd
 from src.tw_daily_update import DailyUpdater
+from src.tw_intraday_update import IntradayUpdater, fetch_finmind_snapshot
 from src.tw_official_data import parse_report, latest_reports, monthly_history, finmind_history
 from scripts.screen_tw_pullback import signal, swing_structure, bullish_reasons
 
@@ -212,6 +213,70 @@ class OfficialDataTests(unittest.TestCase):
             finmind_history("2330", date(2026, 4, 1), date(2026, 9, 14))
             get.assert_called_once()
 
+
+class IntradayUpdateTests(unittest.TestCase):
+    def test_snapshot_schema_and_lot_unit_are_preserved(self):
+        response = Mock()
+        response.json.return_value = {"status": 200, "data": [{
+            "stock_id": "2330", "date": "2026-09-15 12:00:01", "open": 100,
+            "high": 103, "low": 99, "close": 102, "total_volume": 1300,
+        }]}
+        with patch("src.tw_intraday_update.requests.get", return_value=response) as get:
+            frame = fetch_finmind_snapshot("secret")
+        self.assertEqual(frame.total_volume.iloc[0], 1300)
+        self.assertEqual(frame.code.iloc[0], "2330")
+        self.assertEqual(get.call_args.kwargs["headers"]["Authorization"], "Bearer secret")
+        response.raise_for_status.assert_called_once()
+
+    def test_public_intraday_artifact_excludes_realtime_ohlcv(self):
+        rows = [{"code": "2330", "name": "台積電", "market": "listed"},
+                {"code": "8069", "name": "元太", "market": "otc"}]
+        times = (pd.date_range(end="2026-09-14", periods=70) - pd.Timestamp("1970-01-01")) // pd.Timedelta(seconds=1)
+        history = pd.DataFrame({
+            "code": "2330", "name": "台積電", "market": "listed", "time": times,
+            "open": 100., "high": 103., "low": 99., "close": 102., "tick_volume": 1500000.,
+        })
+        snapshot = pd.DataFrame([{
+            "code": "2330", "date": "2026-09-15 12:00:01",
+            "quote_time": pd.Timestamp("2026-09-15 12:00:01"), "open": 100.,
+            "high": 110., "low": 99., "close": 108., "total_volume": 1300.,
+        }])
+        metrics = {"bullish_reasons": ["ma3"], "structure": None, "pullback_pct": 5.,
+                   "prior_declining_days": 2, "reclaimed_previous_high": True, "data_bars": 71}
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch("src.tw_intraday_update.fetch_all_symbols", return_value=rows), \
+                patch("src.tw_intraday_update.fetch_finmind_snapshot", return_value=snapshot), \
+                patch("src.tw_intraday_update.latest_reports", return_value=(date(2026, 9, 14), Mock())), \
+                patch("src.tw_intraday_update.selected_history", return_value=history), \
+                patch("src.tw_intraday_update.signal", return_value=metrics):
+            job = IntradayUpdater(tmp, token="secret", now=datetime(2026, 9, 15, 12, 0))
+            job.run()
+            self.assertEqual(job.status()["status"], "complete")
+            folder = Path(job.status()["data_dir"])
+            result = json.loads((folder / "screening_results.json").read_text(encoding="utf-8"))
+            self.assertTrue(result["is_intraday"])
+            self.assertEqual(result["min_volume_lots"], 1300)
+            published = result["matches"][0]
+            for field in ("open", "high", "low", "close", "total_volume", "volume_lots", "ma"):
+                self.assertNotIn(field, published)
+            closed = pd.read_parquet(folder / "2330_D1.parquet")
+            self.assertEqual(len(closed), 70)
+            self.assertEqual(pd.to_datetime(closed.time.iloc[-1], unit="s").date(), date(2026, 9, 14))
+
+    def test_stale_snapshot_does_not_publish(self):
+        rows = [{"code": "2330", "name": "台積電", "market": "listed"},
+                {"code": "8069", "name": "元太", "market": "otc"}]
+        snapshot = pd.DataFrame([{
+            "code": "2330", "quote_time": pd.Timestamp("2026-09-14 13:30:00"),
+            "open": 100., "high": 103., "low": 99., "close": 102., "total_volume": 2000.,
+        }])
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch("src.tw_intraday_update.fetch_all_symbols", return_value=rows), \
+                patch("src.tw_intraday_update.fetch_finmind_snapshot", return_value=snapshot):
+            job = IntradayUpdater(tmp, token="secret", now=datetime(2026, 9, 15, 12, 0))
+            job.run()
+            self.assertEqual(job.status()["status"], "error")
+            self.assertIn("不是今天", job.status()["error"])
 
 if __name__ == "__main__":
     unittest.main()

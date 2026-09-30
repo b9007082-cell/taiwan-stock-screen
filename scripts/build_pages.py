@@ -13,6 +13,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.tw_daily_update import DailyUpdater
+from src.tw_intraday_update import IntradayUpdater
 from scripts.screen_tw_pullback import SCREENING
 from src.pages_analysis import analyze_stock
 
@@ -71,12 +72,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--snapshot', type=Path, help='Explicit existing snapshot for local preview only')
     parser.add_argument('--output', type=Path, default=ROOT / '_site')
+    parser.add_argument('--mode', choices=('daily', 'intraday'), default='daily',
+                        help='daily: completed market report; intraday: FinMind noon screen')
     args = parser.parse_args()
     if args.snapshot:
         build(args.snapshot, args.output)
     else:
         with tempfile.TemporaryDirectory() as tmp:
-            job = DailyUpdater(tmp, lambda _: None)
+            job = IntradayUpdater(tmp) if args.mode == 'intraday' else DailyUpdater(tmp, lambda _: None)
             job.run()
             state = job.status()
             if state['status'] != 'complete':

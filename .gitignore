@@ -1,4 +1,5 @@
 .venv/
+.test-deps/
 .cache/
 _site/
 __pycache__/
