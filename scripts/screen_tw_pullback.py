@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.fetch_tw_stock_data import fetch_all_symbols
 from src.tw_official_data import latest_reports, selected_history
 
-SCREENING = "bull_pullback_or_ma_v4"
+SCREENING = "bull_pullback_or_ma_v5"
 CRITERIA = {
     "structure": "Last 60 valid bars; strict pivots with 2 bars each side; alternating pivots; latest two highs and lows strictly rising; latest pivot low not subsequently breached",
     "trend": "ANY of: higher highs and higher lows; SMA5 > SMA10 > SMA20; SMA5 > SMA10 > SMA20 > SMA60. No additional MA slope or close-above-MA gate.",
@@ -21,6 +21,7 @@ CRITERIA = {
     "candle": "close > open and previous close; low >= 99% of previous low; close position >=0.4",
     "minimum_bars": 65,
     "min_volume_lots": 1300,
+    "display_indicators": "KD(5,3,3) golden cross; MACD(6,13,9) positive histogram",
 }
 
 
@@ -61,6 +62,38 @@ def bullish_reasons(structure, averages):
     return reasons
 
 
+def technical_indicators(frame):
+    """Return the latest KD(5,3,3) and MACD(6,13,9) display signals."""
+    df = frame.sort_values("time").drop_duplicates("time", keep="last").copy()
+    low5 = df.low.rolling(5).min()
+    high5 = df.high.rolling(5).max()
+    span5 = high5 - low5
+    rsv = ((df.close - low5) / span5 * 100).where(span5 > 0)
+    k_values, d_values = [], []
+    previous_k = previous_d = 50.0
+    for value in rsv:
+        if not pd.isna(value):
+            previous_k = previous_k * 2 / 3 + float(value) / 3
+            previous_d = previous_d * 2 / 3 + previous_k / 3
+        k_values.append(previous_k)
+        d_values.append(previous_d)
+
+    close = df.close
+    dif = close.ewm(span=6, adjust=False).mean() - close.ewm(span=13, adjust=False).mean()
+    macd = dif.ewm(span=9, adjust=False).mean()
+    histogram = dif - macd
+    return {
+        "kd_k": round(k_values[-1], 3),
+        "kd_d": round(d_values[-1], 3),
+        "kd_golden_cross": bool(k_values[-1] > d_values[-1] and k_values[-2] <= d_values[-2]),
+        "dif": round(float(dif.iloc[-1]), 3),
+        "macd": round(float(macd.iloc[-1]), 3),
+        "histogram": round(float(histogram.iloc[-1]), 3),
+        "histogram_rising": bool(histogram.iloc[-1] > histogram.iloc[-2]),
+        "macd_red_bar": bool(histogram.iloc[-1] > 0),
+    }
+
+
 def signal(frame):
     df = frame.sort_values("time").drop_duplicates("time", keep="last").dropna().copy()
     df = df[df.tick_volume > 0]
@@ -80,9 +113,7 @@ def signal(frame):
                      and today.low >= yesterday.low * 0.99 and position >= 0.4)
     if not (reasons and 3 <= pullback <= 15 and declining >= 2 and stabilization):
         return None
-    dif = close.ewm(span=12, adjust=False).mean() - close.ewm(span=26, adjust=False).mean()
-    macd = dif.ewm(span=9, adjust=False).mean()
-    hist = dif - macd
+    indicators = technical_indicators(df)
     volume5 = df.tick_volume.tail(5).mean() / 1000
     volume10 = df.tick_volume.tail(10).mean() / 1000
     return {
@@ -94,9 +125,7 @@ def signal(frame):
         "volume_lots": float(today.tick_volume / 1000), "pullback_pct": round(pullback, 2),
         "prior_declining_days": declining, "close_position": round(position, 3),
         "ma": {str(n): round(float(ma[n].iloc[-1]), 3) for n in ma},
-        "dif": round(float(dif.iloc[-1]), 3), "macd": round(float(macd.iloc[-1]), 3),
-        "histogram": round(float(hist.iloc[-1]), 3),
-        "histogram_rising": bool(hist.iloc[-1] > hist.iloc[-2]),
+        **indicators,
         "volume5_lots": round(float(volume5), 2), "volume10_lots": round(float(volume10), 2),
         "prior_peak": peak, "pullback_low": float(df.low.tail(6).min()),
         "reclaimed_previous_high": bool(today.close > yesterday.high),
@@ -123,8 +152,11 @@ def write_report(result, path):
                   f"資料日 {result['date']}；日 K；收盤 {r['close']:g}；有效歷史 {r['data_bars']} 根。", "",
                   "### 技術指標", "", "| 指標 | 數值 |", "|---|---:|"]
         lines += [f"| MA{n} | {r['ma'][n]:g} |" for n in ("5", "10", "20", "60")]
-        lines += [f"| DIF | {r['dif']:g} |", f"| MACD Signal | {r['macd']:g} |",
+        lines += [f"| KD(5,3,3) K | {r['kd_k']:g} |", f"| KD(5,3,3) D | {r['kd_d']:g} |",
+                  f"| KD 黃金交叉 | {'是' if r['kd_golden_cross'] else '否'} |",
+                  f"| DIF（MACD 6,13,9） | {r['dif']:g} |", f"| MACD Signal | {r['macd']:g} |",
                   f"| 柱狀值（DIF-Signal） | {r['histogram']:g} |",
+                  f"| MACD 紅柱 | {'是' if r['macd_red_bar'] else '否'} |",
                   f"| 5 日均量（張） | {r['volume5_lots']:,.2f} |", f"| 10 日均量（張） | {r['volume10_lots']:,.2f} |", "",
                   "### 型態與多空判斷", "",
                   f"符合中期多頭與紅 K 回升條件；截至前一日回檔 {r['pullback_pct']:g}%。MACD 柱狀值{'上升' if r['histogram_rising'] else '下降'}，尚不代表反轉確認。未另外判定三角形或頭肩等型態。", "",

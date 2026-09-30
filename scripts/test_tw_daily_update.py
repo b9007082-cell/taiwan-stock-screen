@@ -9,7 +9,7 @@ import pandas as pd
 from src.tw_daily_update import DailyUpdater
 from src.tw_intraday_update import IntradayUpdater, fetch_twse_mis_snapshot
 from src.tw_official_data import parse_report, latest_reports, monthly_history, finmind_history
-from scripts.screen_tw_pullback import signal, swing_structure, bullish_reasons
+from scripts.screen_tw_pullback import signal, swing_structure, bullish_reasons, technical_indicators
 
 
 class PullbackSignalTests(unittest.TestCase):
@@ -76,6 +76,23 @@ class BullishOrTests(unittest.TestCase):
         self.assertEqual(bullish_reasons({}, {5: 4, 10: 3, 20: 2, 60: 1}), ['hhhl', 'ma3', 'ma4'])
         for values in ({5: 3, 10: 3, 20: 2, 60: 1}, {5: 4, 10: 2, 20: 2, 60: 1}, {5: 1, 10: 2, 20: 3, 60: 4}):
             self.assertEqual(bullish_reasons(None, values), [])
+
+
+class TechnicalIndicatorTests(unittest.TestCase):
+    def frame(self, closes):
+        return pd.DataFrame({"time": range(len(closes)), "close": closes,
+                             "high": [value + 1 for value in closes],
+                             "low": [value - 1 for value in closes]})
+
+    def test_kd_533_golden_cross(self):
+        result = technical_indicators(self.frame([10] * 20 + [9, 8, 7, 8, 10]))
+        self.assertTrue(result["kd_golden_cross"])
+        self.assertGreater(result["kd_k"], result["kd_d"])
+
+    def test_macd_6_13_9_red_bar(self):
+        result = technical_indicators(self.frame([10] * 20 + [11, 12, 13]))
+        self.assertTrue(result["macd_red_bar"])
+        self.assertGreater(result["histogram"], 0)
 
 
 class StructureTests(unittest.TestCase):
@@ -269,7 +286,9 @@ class IntradayUpdateTests(unittest.TestCase):
             "quote_time": pd.Timestamp("2026-09-15 12:00:01"), "open": 100.,
             "high": 110., "low": 99., "close": 108., "total_volume": 1300.,
         }])
-        metrics = {"bullish_reasons": ["ma3"], "structure": None, "pullback_pct": 5.,
+        metrics = {"bullish_reasons": ["ma3"], "structure": None,
+                   "kd_k": 55., "kd_d": 50., "kd_golden_cross": True, "macd_red_bar": True,
+                   "pullback_pct": 5.,
                    "prior_declining_days": 2, "reclaimed_previous_high": True, "data_bars": 71}
         with tempfile.TemporaryDirectory() as tmp, \
                 patch("src.tw_intraday_update.fetch_all_symbols", return_value=rows), \
@@ -285,6 +304,8 @@ class IntradayUpdateTests(unittest.TestCase):
             self.assertTrue(result["is_intraday"])
             self.assertEqual(result["min_volume_lots"], 1300)
             published = result["matches"][0]
+            self.assertTrue(published["kd_golden_cross"])
+            self.assertTrue(published["macd_red_bar"])
             for field in ("open", "high", "low", "close", "total_volume", "volume_lots", "ma"):
                 self.assertNotIn(field, published)
             closed = pd.read_parquet(folder / "2330_D1.parquet")

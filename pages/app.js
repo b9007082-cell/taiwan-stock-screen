@@ -4,6 +4,30 @@ const data = window.STOCK_DATA;
 const number = value => Number(value).toLocaleString('zh-TW', {maximumFractionDigits: 3});
 const nullable = value => value == null ? '—' : number(value);
 const probability = value => value == null ? '—' : `${number(value * 100)}%`;
+const yesNo = value => value === true ? '是' : value === false ? '否' : '—';
+const ema = (values, span) => {
+  const alpha=2/(span+1), output=[];
+  let previous=values[0];
+  for(const value of values) { previous=alpha*value+(1-alpha)*previous; output.push(previous); }
+  return output;
+};
+function chartIndicators(bars) {
+  const k=[], d=[], closes=bars.map(b=>b.close);
+  let previousK=50, previousD=50;
+  for(let i=0;i<bars.length;i++) {
+    if(i>=4) {
+      const window=bars.slice(i-4,i+1), low=Math.min(...window.map(b=>b.low)), high=Math.max(...window.map(b=>b.high));
+      if(high>low) {
+        const rsv=(bars[i].close-low)/(high-low)*100;
+        previousK=previousK*2/3+rsv/3; previousD=previousD*2/3+previousK/3;
+      }
+    }
+    k.push(previousK); d.push(previousD);
+  }
+  const fast=ema(closes,6), slow=ema(closes,13), dif=fast.map((value,i)=>value-slow[i]);
+  const signal=ema(dif,9), histogram=dif.map((value,i)=>value-signal[i]);
+  return {k,d,dif,signal,histogram};
+}
 let selected;
 let visibleBars = 0;
 function zoomChart(action) {
@@ -43,8 +67,8 @@ function show(stock) {
   const labels={hhhl:'頭頭高底底高',ma3:'三線多排',ma4:'四線多排'};
   const ma=stock.ma || {};
   const details = data.is_intraday
-    ? [['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['成交量門檻','已達 1,300 張'],['回檔幅度',`${stock.pullback_pct}%`],['歷史日 K',stock.data_bars]]
-    : [['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['MA5',ma['5']],['MA10',ma['10']],['MA20',ma['20']],['MA60',ma['60']],['昨收',stock.previous_close],['紅 K 高點',stock.high],['紅 K 低點',stock.low],['近六日低點',stock.pullback_low],['回檔幅度',`${stock.pullback_pct}%`],['收盤位置',`${number(stock.close_position*100)}%`],['歷史日 K',stock.data_bars]];
+    ? [['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['成交量門檻','已達 1,300 張'],['回檔幅度',`${stock.pullback_pct}%`],['歷史日 K',stock.data_bars]]
+    : [['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['MA5',ma['5']],['MA10',ma['10']],['MA20',ma['20']],['MA60',ma['60']],['昨收',stock.previous_close],['紅 K 高點',stock.high],['紅 K 低點',stock.low],['近六日低點',stock.pullback_low],['回檔幅度',`${stock.pullback_pct}%`],['收盤位置',`${number(stock.close_position*100)}%`],['歷史日 K',stock.data_bars]];
   for (const [label, value] of details) {
     const item=document.createElement('div'), term=document.createElement('dt'), desc=document.createElement('dd');
     term.textContent=label; desc.textContent=typeof value==='number'?number(value):value;
@@ -62,6 +86,7 @@ function show(stock) {
   if (!window.Plotly) { $('chart').textContent='圖表尚未載入，可先查看數值與下載 CSV。'; return; }
   if (!$('chart').classList.contains('js-plotly-plot')) $('chart').replaceChildren();
   const dates=bars.map(b=>b.date);
+  const indicators=chartIndicators(bars);
   visibleBars = bars.length;
   updateZoomButtons(bars.length);
   const average=n=>bars.map((b,i)=>i<n-1?null:bars.slice(i-n+1,i+1).reduce((sum,v)=>sum+v.close,0)/n);
@@ -70,8 +95,19 @@ function show(stock) {
     {type:'scatter',mode:'lines',x:dates,y:average(5),name:'MA5',line:{color:'#966690',width:1}},
     {type:'scatter',mode:'lines',x:dates,y:average(10),name:'MA10',line:{color:'#647370',width:1}},
     {type:'scatter',mode:'lines',x:dates,y:average(20),name:'MA20',line:{color:'#ba851a',width:1.5}},
-    {type:'scatter',mode:'lines',x:dates,y:average(60),name:'MA60',line:{color:'#537abc',width:1.5}}
-  ],{margin:{t:15,l:44,r:12,b:38},paper_bgcolor:'#f5f7f7',plot_bgcolor:'#f5f7f7',font:{family:'system-ui',color:'#526363'},dragmode:false,xaxis:{type:'category',nticks:5,rangeslider:{visible:false},fixedrange:true,autorange:true},yaxis:{fixedrange:true,autorange:true,gridcolor:'#dfe6e5'},legend:{orientation:'h',y:1.12},showlegend:true},{responsive:true,displayModeBar:false,scrollZoom:false,doubleClick:false,staticPlot:touchChart.matches});
+    {type:'scatter',mode:'lines',x:dates,y:average(60),name:'MA60',line:{color:'#537abc',width:1.5}},
+    {type:'scatter',mode:'lines',x:dates,y:indicators.k,name:'K(5,3)',yaxis:'y2',line:{color:'#c84750',width:1.4}},
+    {type:'scatter',mode:'lines',x:dates,y:indicators.d,name:'D(5,3)',yaxis:'y2',line:{color:'#537abc',width:1.4}},
+    {type:'bar',x:dates,y:indicators.histogram,name:'MACD柱',yaxis:'y3',marker:{color:indicators.histogram.map(v=>v>0?'#c84750':'#25836b')}},
+    {type:'scatter',mode:'lines',x:dates,y:indicators.dif,name:'DIF(6,13)',yaxis:'y3',line:{color:'#ba851a',width:1.3}},
+    {type:'scatter',mode:'lines',x:dates,y:indicators.signal,name:'Signal(9)',yaxis:'y3',line:{color:'#537abc',width:1.3}}
+  ],{margin:{t:28,l:50,r:12,b:38},paper_bgcolor:'#f5f7f7',plot_bgcolor:'#f5f7f7',font:{family:'system-ui',color:'#526363'},dragmode:false,
+    xaxis:{type:'category',nticks:5,rangeslider:{visible:false},fixedrange:true,autorange:true,anchor:'y3'},
+    yaxis:{domain:[0.47,1],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'價格'},
+    yaxis2:{domain:[0.25,0.41],fixedrange:true,range:[0,100],gridcolor:'#dfe6e5',title:'KD'},
+    yaxis3:{domain:[0,0.19],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'MACD'},
+    shapes:[{type:'line',xref:'paper',x0:0,x1:1,yref:'y2',y0:20,y1:20,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y2',y0:80,y1:80,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:0,y1:0,line:{color:'#9aa8a7',width:1}}],
+    legend:{orientation:'h',y:1.08},showlegend:true,barmode:'relative'},{responsive:true,displayModeBar:false,scrollZoom:false,doubleClick:false,staticPlot:touchChart.matches});
 }
 function render() {
   const query=$('search').value.trim().toLowerCase(), market=$('market').value, sort=$('sort').value;
@@ -86,7 +122,7 @@ function render() {
     const a=stock.analysis || {};
     if(a.error) { sub.textContent+=' · 分析失敗'; sub.title=a.error; }
     const change=data.is_intraday ? null : (a.change_pct ?? (stock.previous_close > 0 ? (stock.close/stock.previous_close-1)*100 : null));
-    const values=[data.is_intraday?'—':nullable(a.current_price ?? stock.close),change == null?'—':`${change>=0?'+':''}${number(change)}%`,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?'≥1,300':number(stock.volume_lots),`${stock.pullback_pct}%`];
+    const values=[data.is_intraday?'—':nullable(a.current_price ?? stock.close),change == null?'—':`${change>=0?'+':''}${number(change)}%`,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',yesNo(stock.kd_golden_cross),yesNo(stock.macd_red_bar),a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?'≥1,300':number(stock.volume_lots),`${stock.pullback_pct}%`];
     for(const [i,value] of values.entries()) { const td=document.createElement('td'); td.textContent=value; if(i===1 && change!=null) td.className=change>=0?'price-up':'price-down'; row.append(td); }
     $('rows').append(row);
   }

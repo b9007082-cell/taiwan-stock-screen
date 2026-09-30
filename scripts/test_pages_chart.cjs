@@ -15,8 +15,8 @@ function checkChart(mobile) {
   get('sort').value = 'code';
   const bars = Array.from({length:100}, (_,i) => ({date:String(i),open:10,high:12,low:9,close:11}));
   const stock = {code:'TEST',name:'Test',ma:{},bullish_reasons:[],close_position:0.5};
-  let layout, config, range;
-  const Plotly = {purge(){}, react(id,traces,l,c){layout=l;config=c;},
+  let layout, config, range, chartTraces;
+  const Plotly = {purge(){}, react(id,traces,l,c){chartTraces=traces;layout=l;config=c;},
     relayout(id,values){range=values['xaxis.range'];}};
   const context = vm.createContext({document:{getElementById:get,createElement:element}, Plotly,
     window:{STOCK_DATA:{matches:[],candles:{TEST:bars},date:'2026-09-29',built_at:'2026-09-29'},
@@ -28,6 +28,10 @@ function checkChart(mobile) {
   assert.equal(config.doubleClick,false);
   assert.equal(layout.dragmode,false);
   assert.equal(layout.xaxis.fixedrange,true);
+  assert.equal(chartTraces.length,10);
+  assert.equal(chartTraces.find(trace=>trace.name==='K(5,3)').yaxis,'y2');
+  assert.equal(chartTraces.find(trace=>trace.name==='MACD柱').yaxis,'y3');
+  assert.equal(layout.yaxis2.range[1],100);
   assert.equal(get('zoom-out').disabled,true);
   context.zoomChart('in');
   assert.equal(range[1]-range[0],80);

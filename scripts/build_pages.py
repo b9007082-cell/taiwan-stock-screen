@@ -47,9 +47,12 @@ def build(snapshot, destination):
         shutil.copy2(snapshot / f'{code}_D1.csv', downloads / f'{code}_D1.csv')
     archive = snapshot / f"tw_stock_{result['date']}_1300lots.zip"
     shutil.copy2(archive, downloads / 'stocks.zip')
-    analysis = [{'code': s['code'], 'name': s['name'], **s['analysis']} for s in result['matches']]
+    analysis = [{'code': s['code'], 'name': s['name'],
+                 'kd_golden_cross': s.get('kd_golden_cross'),
+                 'macd_red_bar': s.get('macd_red_bar'), **s['analysis']} for s in result['matches']]
     (downloads / 'analysis.json').write_text(json.dumps(analysis, ensure_ascii=False, allow_nan=False), encoding='utf-8')
-    fields = ['code', 'name', 'current_price', 'change_pct', 'p_touch', 'p_hold', 'n_events', 'trend_label',
+    fields = ['code', 'name', 'kd_golden_cross', 'macd_red_bar', 'current_price', 'change_pct',
+              'p_touch', 'p_hold', 'n_events', 'trend_label',
               'nearest_distance_atr', 'nearest_support', 'nearest_resistance', 'n_zones', 'error']
     pd.DataFrame(analysis).reindex(columns=fields).to_csv(downloads / 'analysis.csv', index=False, encoding='utf-8-sig')
     with zipfile.ZipFile(downloads / 'stocks.zip', 'a', zipfile.ZIP_DEFLATED) as bundle:
@@ -73,7 +76,7 @@ def main():
     parser.add_argument('--snapshot', type=Path, help='Explicit existing snapshot for local preview only')
     parser.add_argument('--output', type=Path, default=ROOT / '_site')
     parser.add_argument('--mode', choices=('daily', 'intraday'), default='daily',
-                        help='daily: completed market report; intraday: FinMind noon screen')
+                        help='daily: completed market report; intraday: TWSE MIS noon screen')
     args = parser.parse_args()
     if args.snapshot:
         build(args.snapshot, args.output)
