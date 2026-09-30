@@ -11,7 +11,7 @@ from src.tw_intraday_update import IntradayUpdater, fetch_twse_mis_snapshot
 from src.tw_official_data import parse_report, latest_reports, monthly_history, finmind_history
 from scripts.screen_tw_pullback import (signal, swing_structure, bullish_reasons,
                                         technical_indicators, above_ma20, classify_rising_stage,
-                                        has_heavy_down_day)
+                                        pullback_volume_contracted)
 
 
 class PullbackSignalTests(unittest.TestCase):
@@ -23,10 +23,13 @@ class PullbackSignalTests(unittest.TestCase):
 
     def frame(self):
         closes = list(range(100, 180)) + [176, 173, 172, 173, 174, 177]
+        volumes = [2000000] * len(closes)
+        volumes[80:85] = [5000000, 1000000, 1000000, 4000000, 2000000]
+        volumes[-1] = 2100000
         return pd.DataFrame({"time": range(len(closes)), "close": closes,
                              "open": [c - 1 for c in closes], "high": [c + 1 for c in closes],
                              "low": [c - 2 for c in closes],
-                             "tick_volume": [2000000] * (len(closes) - 1) + [2100000]}).astype(float)
+                             "tick_volume": volumes}).astype(float)
 
     def test_relaxed_low_and_close_position(self):
         frame = self.frame()
@@ -73,6 +76,7 @@ class PullbackSignalTests(unittest.TestCase):
         values = [182, 177, 175, 174, 179]
         for column, offset in [('close', 0), ('open', -1), ('high', 1), ('low', -2)]:
             frame.loc[81:85, column] = [v + offset for v in values]
+        frame.loc[80:84, 'tick_volume'] = [1000000, 5000000, 3000000, 2000000, 1000000]
         with patch('scripts.screen_tw_pullback.swing_structure', return_value=None):
             result = signal(frame)
             self.assertIsNotNone(result)
@@ -136,14 +140,16 @@ class TechnicalIndicatorTests(unittest.TestCase):
         self.assertEqual(main[0], "主升段")
         self.assertEqual(late[0], "末升段")
 
-    def test_heavy_down_volume_in_previous_five_days_is_excluded(self):
+    def test_pullback_down_volume_and_trend_must_contract(self):
         frame = PullbackSignalTests().frame()
-        frame.loc[82, "tick_volume"] = 3000000
-        self.assertTrue(has_heavy_down_day(frame))
+        self.assertTrue(pullback_volume_contracted(frame))
         with patch('scripts.screen_tw_pullback.swing_structure', return_value={'highs': [], 'lows': []}):
-            self.assertIsNone(signal(frame))
-        frame.loc[82, "tick_volume"] = 2999999
-        self.assertFalse(has_heavy_down_day(frame))
+            self.assertIsNotNone(signal(frame))
+        frame.loc[80:82, "tick_volume"] = 4000000
+        self.assertFalse(pullback_volume_contracted(frame))
+        frame = PullbackSignalTests().frame()
+        frame.loc[80:84, "tick_volume"] = [1000000, 1000000, 1000000, 2000000, 3000000]
+        self.assertFalse(pullback_volume_contracted(frame))
 
 
 class StructureTests(unittest.TestCase):
@@ -202,13 +208,14 @@ class OfficialDataTests(unittest.TestCase):
     @patch('scripts.screen_tw_pullback.swing_structure', return_value={'highs': [], 'lows': []})
     def test_snapshot_threshold_history_and_archive(self, structure):
         rows = [{"code": c, "name": c, "market": m} for c, m in [("2330", "listed"), ("8069", "otc"), ("1101", "listed")]]
-        closes = list(range(100, 180)) + [176, 173, 172, 173, 174, 177]
+        closes = list(range(100, 180)) + [182, 179, 176, 174, 173, 177]
         history = pd.concat([pd.DataFrame({
             **r, "time": (pd.date_range(end="2026-09-14", periods=len(closes)) - pd.Timestamp("1970-01-01")) // pd.Timedelta(seconds=1),
             "open": [c - 1 for c in closes], "high": [c + 1 for c in closes],
             "low": [c - 2 for c in closes], "close": closes,
             "tick_volume": ([1499999] * len(closes) if r["code"] == "1101"
-                            else [1500000] * (len(closes) - 1) + [1600000]),
+                            else [2000000] * (len(closes) - 6)
+                            + [3000000, 2600000, 2300000, 2000000, 1500000, 1600000]),
         }) for r in rows], ignore_index=True)
         latest = history.groupby("code").tail(1)
         with tempfile.TemporaryDirectory() as tmp, \
@@ -342,7 +349,7 @@ class IntradayUpdateTests(unittest.TestCase):
         metrics = {"bullish_reasons": ["ma3"], "structure": None,
                    "kd_k": 55., "kd_d": 50., "kd_golden_cross": True, "macd_red_bar": True,
                    "above_ma20": True,
-                   "volume_increased": True, "heavy_down_volume": False,
+                   "volume_increased": True, "pullback_volume_contracted": True,
                    "rising_stage": "主升段", "rising_stage_reason": "test",
                    "pullback_pct": 5.,
                    "prior_declining_days": 2, "reclaimed_previous_high": True, "data_bars": 71}
@@ -363,7 +370,7 @@ class IntradayUpdateTests(unittest.TestCase):
             self.assertTrue(published["kd_golden_cross"])
             self.assertTrue(published["macd_red_bar"])
             self.assertTrue(published["volume_increased"])
-            self.assertFalse(published["heavy_down_volume"])
+            self.assertTrue(published["pullback_volume_contracted"])
             self.assertEqual(published["rising_stage"], "主升段")
             for field in ("open", "high", "low", "close", "total_volume", "volume_lots", "ma"):
                 self.assertNotIn(field, published)

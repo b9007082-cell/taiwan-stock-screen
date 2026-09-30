@@ -176,7 +176,7 @@ class IntradayUpdater:
                 "macd_red_bar": metrics["macd_red_bar"],
                 "above_ma20": metrics["above_ma20"],
                 "volume_increased": metrics["volume_increased"],
-                "heavy_down_volume": metrics["heavy_down_volume"],
+                "pullback_volume_contracted": metrics["pullback_volume_contracted"],
                 "rising_stage": metrics["rising_stage"],
                 "rising_stage_reason": metrics["rising_stage_reason"],
                 "pullback_pct": metrics["pullback_pct"],
