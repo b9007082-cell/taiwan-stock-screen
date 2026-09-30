@@ -54,7 +54,7 @@ class PagesTests(unittest.TestCase):
         (path / 'source.json').write_text('{}', encoding='utf-8')
         for name in ('tw_stock_symbols.csv', 'fetch_errors.csv'):
             (path / name).write_text('code,name\n', encoding='utf-8')
-        with zipfile.ZipFile(path / 'tw_stock_2026-09-24_1300lots.zip', 'w') as bundle:
+        with zipfile.ZipFile(path / 'tw_stock_2026-09-24_2000lots.zip', 'w') as bundle:
             bundle.writestr('source.json', '{}')
 
     def test_empty_snapshot(self):

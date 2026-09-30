@@ -20,7 +20,7 @@ CRITERIA = {
     "pullback": "previous close 3-15% below previous 10-bar high; >=2 declines in previous 5 bars",
     "candle": "close > open and previous close; low >= 99% of previous low; close position >=0.4",
     "minimum_bars": 65,
-    "min_volume_lots": 1300,
+    "min_volume_lots": 2000,
     "display_indicators": "KD(5,3,3) golden cross; MACD(6,13,9) positive histogram",
 }
 
@@ -189,7 +189,7 @@ def main():
     day, latest = latest_reports(cutoff)
     universe = {(r["code"], r["market"]): r for r in fetch_all_symbols()}
     latest = latest[[key in universe for key in zip(latest.code, latest.market)]]
-    liquid = latest[latest.tick_volume >= 1300000]
+    liquid = latest[latest.tick_volume >= 2000000]
     candidates = liquid[liquid.close > liquid.open]
     print(f"Data date {day}; liquid {len(liquid)}; red candles {len(candidates)}", flush=True)
     start = (pd.Timestamp(day).replace(day=1) - pd.DateOffset(months=5)).date()
@@ -210,9 +210,9 @@ def main():
     found.sort(key=lambda r: (not r["reclaimed_previous_high"], r["code"]))
     result = {"date": str(day), "source": "TWSE/TPEx daily; FinMind/TPEx history; unadjusted",
               "screening": SCREENING, "criteria": CRITERIA,
-              "min_volume_lots": 1300, "liquid_universe": len(liquid), "red_candidates": len(candidates),
+              "min_volume_lots": 2000, "liquid_universe": len(liquid), "red_candidates": len(candidates),
               "insufficient_history": insufficient, "matches": found}
-    path = ROOT / "output" / f"tw_bull_pullback_{day}_1300lots_v4.json"
+    path = ROOT / "output" / f"tw_bull_pullback_{day}_2000lots_v4.json"
     path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     write_report(result, path.with_suffix(".md"))
     print(json.dumps(result, ensure_ascii=False, indent=2))

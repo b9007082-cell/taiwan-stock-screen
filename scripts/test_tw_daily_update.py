@@ -24,7 +24,7 @@ class PullbackSignalTests(unittest.TestCase):
         closes = list(range(100, 180)) + [176, 173, 172, 173, 174, 177]
         return pd.DataFrame({"time": range(len(closes)), "close": closes,
                              "open": [c - 1 for c in closes], "high": [c + 1 for c in closes],
-                             "low": [c - 2 for c in closes], "tick_volume": 1300000}).astype(float)
+                             "low": [c - 2 for c in closes], "tick_volume": 2000000}).astype(float)
 
     def test_relaxed_low_and_close_position(self):
         frame = self.frame()
@@ -161,7 +161,7 @@ class OfficialDataTests(unittest.TestCase):
             **r, "time": (pd.date_range(end="2026-09-14", periods=len(closes)) - pd.Timestamp("1970-01-01")) // pd.Timedelta(seconds=1),
             "open": [c - 1 for c in closes], "high": [c + 1 for c in closes],
             "low": [c - 2 for c in closes], "close": closes,
-            "tick_volume": 1299722 if r["code"] == "1101" else 1300000,
+            "tick_volume": 1999999 if r["code"] == "1101" else 2000000,
         }) for r in rows], ignore_index=True)
         latest = history.groupby("code").tail(1)
         with tempfile.TemporaryDirectory() as tmp, \
@@ -241,7 +241,7 @@ class IntradayUpdateTests(unittest.TestCase):
         response = Mock(ok=True)
         response.json.return_value = {"rtcode": "0000", "msgArray": [{
             "c": "2330", "d": "20260915", "t": "12:00:01", "o": "100.0000",
-            "h": "103.0000", "l": "99.0000", "z": "102.0000", "v": "1300",
+            "h": "103.0000", "l": "99.0000", "z": "102.0000", "v": "2000",
         }, {
             "c": "8069", "d": "20260915", "t": "12:00:02", "o": "50.0000",
             "h": "52.0000", "l": "49.0000", "z": "51.0000", "v": "1,301",
@@ -251,7 +251,7 @@ class IntradayUpdateTests(unittest.TestCase):
         symbols = [{"code": "2330", "market": "listed"}, {"code": "8069", "market": "otc"}]
         with patch("src.tw_intraday_update.requests.Session", return_value=session):
             frame = fetch_twse_mis_snapshot(symbols)
-        self.assertEqual(frame.total_volume.iloc[0], 1300)
+        self.assertEqual(frame.total_volume.iloc[0], 2000)
         self.assertEqual(frame.code.iloc[0], "2330")
         self.assertEqual(frame.total_volume.iloc[1], 1301)
         self.assertEqual(session.get.call_args_list[1].kwargs["params"]["ex_ch"],
@@ -270,7 +270,7 @@ class IntradayUpdateTests(unittest.TestCase):
         response = Mock(ok=True)
         response.json.return_value = {"rtcode": "0000", "msgArray": [{
             "c": "2330", "d": "20260915", "t": "12:00:01", "o": "100",
-            "h": "103", "l": "99", "z": "-", "v": "1300",
+            "h": "103", "l": "99", "z": "-", "v": "2000",
         }]}
         session = Mock()
         session.get.side_effect = [Mock(ok=True), response]
@@ -289,7 +289,7 @@ class IntradayUpdateTests(unittest.TestCase):
         snapshot = pd.DataFrame([{
             "code": "2330", "date": "2026-09-15 12:00:01",
             "quote_time": pd.Timestamp("2026-09-15 12:00:01"), "open": 100.,
-            "high": 110., "low": 99., "close": 108., "total_volume": 1300.,
+            "high": 110., "low": 99., "close": 108., "total_volume": 2000.,
         }])
         metrics = {"bullish_reasons": ["ma3"], "structure": None,
                    "kd_k": 55., "kd_d": 50., "kd_golden_cross": True, "macd_red_bar": True,
@@ -308,7 +308,7 @@ class IntradayUpdateTests(unittest.TestCase):
             folder = Path(job.status()["data_dir"])
             result = json.loads((folder / "screening_results.json").read_text(encoding="utf-8"))
             self.assertTrue(result["is_intraday"])
-            self.assertEqual(result["min_volume_lots"], 1300)
+            self.assertEqual(result["min_volume_lots"], 2000)
             published = result["matches"][0]
             self.assertTrue(published["kd_golden_cross"])
             self.assertTrue(published["macd_red_bar"])

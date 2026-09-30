@@ -48,7 +48,7 @@ class DailyUpdater:
             if self.state["status"] == "running":
                 return False
             self.state = {"status": "running", "stage": "取得股票清單", "done": 0,
-                          "total": 0, "selected": 0, "failed": 0, "min_volume_lots": 1300}
+                          "total": 0, "selected": 0, "failed": 0, "min_volume_lots": 2000}
         threading.Thread(target=self.run, daemon=True).start()
         return True
 
@@ -70,13 +70,13 @@ class DailyUpdater:
         start = (pd.Timestamp(target).replace(day=1) - pd.DateOffset(months=5)).date()
         universe = {(r["code"], r["market"]): r for r in rows}
         latest = latest[[key in universe for key in zip(latest.code, latest.market)]]
-        liquid = latest[latest.tick_volume >= 1300000]
+        liquid = latest[latest.tick_volume >= 2000000]
         eligible = liquid[liquid.close > liquid.open]
         folder = self.root / "data" / "tw_daily" / now.strftime("%Y%m%d_%H%M%S_%f")
         folder.mkdir(parents=True)
         self.update(stage="補齊歷史資料", market_date=target.isoformat(),
                     source="TWSE/TPEx", history_source="FinMind/TPEx", price_basis="unadjusted",
-                    selected=0, min_volume_lots=1300, screening=SCREENING,
+                    selected=0, min_volume_lots=2000, screening=SCREENING,
                     liquid_universe=len(liquid), red_candidates=len(eligible))
         selected, errors, matches = [], [], []
         history = selected_history(start, target, eligible.to_dict("records"),
@@ -116,18 +116,18 @@ class DailyUpdater:
         write_csv(folder / "fetch_errors.csv", errors, ["code", "reason"])
         self.update(stage="建立下載檔", selected=len(selected), failed=len(errors))
         (folder / "screening_results.json").write_text(json.dumps({
-            "date": str(target), "screening": SCREENING, "min_volume_lots": 1300,
+            "date": str(target), "screening": SCREENING, "min_volume_lots": 2000,
             "liquid_universe": len(liquid), "red_candidates": len(eligible), "matches": matches,
             "criteria": CRITERIA,
         }, ensure_ascii=False), encoding="utf-8")
         (folder / "source.json").write_text(json.dumps({
             "source": "TWSE/TPEx", "history_source": "FinMind (listed), TPEx (OTC)",
             "price_basis": "unadjusted", "volume_unit": "shares",
-            "market_date": str(target), "history_start": str(start), "min_volume_lots": 1300,
+            "market_date": str(target), "history_start": str(start), "min_volume_lots": 2000,
             "screening": SCREENING,
             "history_volume_note": "TPEx monthly historical volume is rounded to lots and converted to shares; target-day volume is exact shares.",
         }), encoding="utf-8")
-        archive = folder / f"tw_stock_{target}_1300lots.zip"
+        archive = folder / f"tw_stock_{target}_2000lots.zip"
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
             for path in sorted(folder.iterdir()):
                 if path.suffix in (".csv", ".parquet", ".json"):

@@ -67,7 +67,7 @@ function show(stock) {
   const labels={hhhl:'頭頭高底底高',ma3:'三線多排',ma4:'四線多排'};
   const ma=stock.ma || {};
   const details = data.is_intraday
-    ? [['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['3 日內站回月線',yesNo(stock.ma20_reclaimed_within_3d)],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['成交量門檻','已達 1,300 張'],['回檔幅度',`${stock.pullback_pct}%`],['歷史日 K',stock.data_bars]]
+    ? [['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['3 日內站回月線',yesNo(stock.ma20_reclaimed_within_3d)],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['成交量門檻','已達 2,000 張'],['回檔幅度',`${stock.pullback_pct}%`],['歷史日 K',stock.data_bars]]
     : [['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['3 日內站回月線',yesNo(stock.ma20_reclaimed_within_3d)],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['MA5',ma['5']],['MA10',ma['10']],['MA20',ma['20']],['MA60',ma['60']],['昨收',stock.previous_close],['紅 K 高點',stock.high],['紅 K 低點',stock.low],['近六日低點',stock.pullback_low],['回檔幅度',`${stock.pullback_pct}%`],['收盤位置',`${number(stock.close_position*100)}%`],['歷史日 K',stock.data_bars]];
   for (const [label, value] of details) {
     const item=document.createElement('div'), term=document.createElement('dt'), desc=document.createElement('dd');
@@ -122,7 +122,7 @@ function render() {
     const a=stock.analysis || {};
     if(a.error) { sub.textContent+=' · 分析失敗'; sub.title=a.error; }
     const change=data.is_intraday ? null : (a.change_pct ?? (stock.previous_close > 0 ? (stock.close/stock.previous_close-1)*100 : null));
-    const values=[data.is_intraday?'—':nullable(a.current_price ?? stock.close),change == null?'—':`${change>=0?'+':''}${number(change)}%`,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',yesNo(stock.kd_golden_cross),yesNo(stock.macd_red_bar),a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?'≥1,300':number(stock.volume_lots),`${stock.pullback_pct}%`];
+    const values=[data.is_intraday?'—':nullable(a.current_price ?? stock.close),change == null?'—':`${change>=0?'+':''}${number(change)}%`,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',yesNo(stock.kd_golden_cross),yesNo(stock.macd_red_bar),a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?'≥2,000':number(stock.volume_lots),`${stock.pullback_pct}%`];
     for(const [i,value] of values.entries()) { const td=document.createElement('td'); td.textContent=value; if(i===1 && change!=null) td.className=change>=0?'price-up':'price-down'; row.append(td); }
     $('rows').append(row);
   }
@@ -135,9 +135,9 @@ else {
   const age=Math.floor((Date.now()-new Date(`${data.date}T00:00:00+08:00`).getTime())/86400000);
   const asOf=data.as_of?new Date(data.as_of).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'}):'';
   $('status').textContent=data.is_intraday
-    ? `盤中暫定（截至 ${asOf}）· 累積量達 1,300 張 ${data.liquid_universe} 檔 · 紅 K ${data.red_candidates} 檔 · 13:30 收盤前條件仍可能改變。`
+    ? `盤中暫定（截至 ${asOf}）· 累積量達 2,000 張 ${data.liquid_universe} 檔 · 紅 K ${data.red_candidates} 檔 · 13:30 收盤前條件仍可能改變。`
     : `成交量達標 ${data.liquid_universe} 檔 · 紅 K ${data.red_candidates} 檔 · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
-  if(data.is_intraday) $('analysis-note').textContent='本頁為盤中暫定篩選結果；成交量門檻固定為累積 1,300 張。盤中資料取自證交所 MIS，公開頁不顯示即時價量原始欄位；圖表、支撐壓力與機率以最近完整收盤資料計算。13:30 收盤前結果仍可能改變。';
+  if(data.is_intraday) $('analysis-note').textContent='本頁為盤中暫定篩選結果；成交量門檻固定為累積 2,000 張。盤中資料取自證交所 MIS，公開頁不顯示即時價量原始欄位；圖表、支撐壓力與機率以最近完整收盤資料計算。13:30 收盤前結果仍可能改變。';
   $('built').textContent=`網頁產生時間 ${new Date(data.built_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})}（台灣）`;
   for(const id of ['search','market','sort']) $(id).addEventListener(id==='search'?'input':'change',render);
   render();

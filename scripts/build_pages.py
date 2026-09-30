@@ -45,7 +45,7 @@ def build(snapshot, destination):
         frame['date'] = pd.to_datetime(frame.time, unit='s').dt.strftime('%Y-%m-%d')
         candles[code] = frame[['date', 'open', 'high', 'low', 'close', 'tick_volume']].to_dict('records')
         shutil.copy2(snapshot / f'{code}_D1.csv', downloads / f'{code}_D1.csv')
-    archive = snapshot / f"tw_stock_{result['date']}_1300lots.zip"
+    archive = snapshot / f"tw_stock_{result['date']}_2000lots.zip"
     shutil.copy2(archive, downloads / 'stocks.zip')
     analysis = [{'code': s['code'], 'name': s['name'],
                  'kd_golden_cross': s.get('kd_golden_cross'),
