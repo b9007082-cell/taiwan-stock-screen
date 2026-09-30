@@ -31,11 +31,15 @@ def fetch_finmind_snapshot(token):
     response = requests.get(
         SNAPSHOT_URL,
         headers={"Authorization": f"Bearer {token}"},
-        params={"data_id": ""},
         timeout=45,
     )
-    response.raise_for_status()
-    payload = response.json()
+    try:
+        payload = response.json()
+    except requests.JSONDecodeError:
+        payload = {}
+    if not response.ok:
+        message = payload.get("msg") or payload.get("detail") or response.reason
+        raise RuntimeError(f"FinMind 即時資料 HTTP {response.status_code}：{message}")
     if payload.get("status") not in (None, 200):
         raise RuntimeError(f"FinMind 即時資料失敗：{payload.get('msg', 'unknown error')}")
     frame = pd.DataFrame(payload.get("data", []))

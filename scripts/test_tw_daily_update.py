@@ -226,7 +226,14 @@ class IntradayUpdateTests(unittest.TestCase):
         self.assertEqual(frame.total_volume.iloc[0], 1300)
         self.assertEqual(frame.code.iloc[0], "2330")
         self.assertEqual(get.call_args.kwargs["headers"]["Authorization"], "Bearer secret")
-        response.raise_for_status.assert_called_once()
+        self.assertNotIn("params", get.call_args.kwargs)
+
+    def test_snapshot_http_error_includes_finmind_message(self):
+        response = Mock(ok=False, status_code=403, reason="Forbidden")
+        response.json.return_value = {"detail": "sponsor required"}
+        with patch("src.tw_intraday_update.requests.get", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 403.*sponsor required"):
+                fetch_finmind_snapshot("secret")
 
     def test_public_intraday_artifact_excludes_realtime_ohlcv(self):
         rows = [{"code": "2330", "name": "台積電", "market": "listed"},
