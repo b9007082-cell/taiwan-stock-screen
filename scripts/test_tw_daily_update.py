@@ -9,7 +9,8 @@ import pandas as pd
 from src.tw_daily_update import DailyUpdater
 from src.tw_intraday_update import IntradayUpdater, fetch_twse_mis_snapshot
 from src.tw_official_data import parse_report, latest_reports, monthly_history, finmind_history
-from scripts.screen_tw_pullback import signal, swing_structure, bullish_reasons, technical_indicators
+from scripts.screen_tw_pullback import (signal, swing_structure, bullish_reasons,
+                                        technical_indicators, ma20_reclaimed_within_3d)
 
 
 class PullbackSignalTests(unittest.TestCase):
@@ -93,6 +94,10 @@ class TechnicalIndicatorTests(unittest.TestCase):
         result = technical_indicators(self.frame([10] * 20 + [11, 12, 13]))
         self.assertTrue(result["macd_red_bar"])
         self.assertGreater(result["histogram"], 0)
+
+    def test_ma20_must_be_reclaimed_within_three_bars(self):
+        self.assertFalse(ma20_reclaimed_within_3d(pd.Series([20.] * 20 + [10., 11., 12.])))
+        self.assertTrue(ma20_reclaimed_within_3d(pd.Series([20.] * 20 + [10., 11., 21.])))
 
 
 class StructureTests(unittest.TestCase):
@@ -288,6 +293,7 @@ class IntradayUpdateTests(unittest.TestCase):
         }])
         metrics = {"bullish_reasons": ["ma3"], "structure": None,
                    "kd_k": 55., "kd_d": 50., "kd_golden_cross": True, "macd_red_bar": True,
+                   "ma20_reclaimed_within_3d": True,
                    "pullback_pct": 5.,
                    "prior_declining_days": 2, "reclaimed_previous_high": True, "data_bars": 71}
         with tempfile.TemporaryDirectory() as tmp, \
