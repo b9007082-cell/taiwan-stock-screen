@@ -15,9 +15,7 @@
 3. 成功後可使用 `https://b9007082-cell.github.io/taiwan-stock-screen/`。
 
 平日台灣時間約 12:00（UTC 04:00）執行盤中暫定篩選，16:30（UTC 08:30）改為收盤確認，也可由儲存庫管理者手動選擇模式觸發。盤中成交量仍須累積至少 1,300 張，不依時間比例調低。
-盤中模式需要 Sponsor 等級的 FinMind token：到 Settings → Secrets and variables → Actions，新增 Repository secret `FINMIND_TOKEN`。Token 只交給 Actions 後端，不會寫入 Pages。
-
-FinMind 不允許在公開 Web／App 直接呈現即時原始資料，因此盤中頁只發布篩選後的代碼、名稱與衍生訊號；即時價格、OHLC 與精確成交量不會寫入公開產物。圖表及支撐壓力沿用最近完整收盤資料。
+盤中模式使用證交所 MIS 盤中行情（同一服務可查上市與上櫃代碼），不需要 FinMind Sponsor token。公開頁只發布篩選後的代碼、名稱與衍生訊號；即時價格、OHLC 與精確成交量不會寫入公開產物。圖表及支撐壓力沿用最近完整收盤資料。
 GitHub 排程可能延後；公開儲存庫長期沒有活動時排程可能被停用，請留意 Actions。
 首次抓取較久；歷史行情使用 Actions cache 減少重複請求。
 官方來源或 FinMind 限流、海外主機遭阻擋時，工作流程會失敗，**不覆蓋上次成功網頁**。

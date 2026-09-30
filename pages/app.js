@@ -101,7 +101,7 @@ else {
   $('status').textContent=data.is_intraday
     ? `盤中暫定（截至 ${asOf}）· 累積量達 1,300 張 ${data.liquid_universe} 檔 · 紅 K ${data.red_candidates} 檔 · 13:30 收盤前條件仍可能改變。`
     : `成交量達標 ${data.liquid_universe} 檔 · 紅 K ${data.red_candidates} 檔 · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
-  if(data.is_intraday) $('analysis-note').textContent='本頁為盤中暫定篩選結果；成交量門檻固定為累積 1,300 張。依資料來源授權，公開頁不顯示 FinMind 即時價量原始欄位；圖表、支撐壓力與機率以最近完整收盤資料計算。13:30 收盤前結果仍可能改變。';
+  if(data.is_intraday) $('analysis-note').textContent='本頁為盤中暫定篩選結果；成交量門檻固定為累積 1,300 張。盤中資料取自證交所 MIS，公開頁不顯示即時價量原始欄位；圖表、支撐壓力與機率以最近完整收盤資料計算。13:30 收盤前結果仍可能改變。';
   $('built').textContent=`網頁產生時間 ${new Date(data.built_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})}（台灣）`;
   for(const id of ['search','market','sort']) $(id).addEventListener(id==='search'?'input':'change',render);
   render();

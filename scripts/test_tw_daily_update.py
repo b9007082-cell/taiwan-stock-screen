@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import pandas as pd
 from src.tw_daily_update import DailyUpdater
-from src.tw_intraday_update import IntradayUpdater, fetch_finmind_snapshot
+from src.tw_intraday_update import IntradayUpdater, fetch_twse_mis_snapshot
 from src.tw_official_data import parse_report, latest_reports, monthly_history, finmind_history
 from scripts.screen_tw_pullback import signal, swing_structure, bullish_reasons
 
@@ -216,24 +216,45 @@ class OfficialDataTests(unittest.TestCase):
 
 class IntradayUpdateTests(unittest.TestCase):
     def test_snapshot_schema_and_lot_unit_are_preserved(self):
-        response = Mock()
-        response.json.return_value = {"status": 200, "data": [{
-            "stock_id": "2330", "date": "2026-09-15 12:00:01", "open": 100,
-            "high": 103, "low": 99, "close": 102, "total_volume": 1300,
+        response = Mock(ok=True)
+        response.json.return_value = {"rtcode": "0000", "msgArray": [{
+            "c": "2330", "d": "20260915", "t": "12:00:01", "o": "100.0000",
+            "h": "103.0000", "l": "99.0000", "z": "102.0000", "v": "1300",
+        }, {
+            "c": "8069", "d": "20260915", "t": "12:00:02", "o": "50.0000",
+            "h": "52.0000", "l": "49.0000", "z": "51.0000", "v": "1,301",
         }]}
-        with patch("src.tw_intraday_update.requests.get", return_value=response) as get:
-            frame = fetch_finmind_snapshot("secret")
+        session = Mock()
+        session.get.side_effect = [Mock(ok=True), response]
+        symbols = [{"code": "2330", "market": "listed"}, {"code": "8069", "market": "otc"}]
+        with patch("src.tw_intraday_update.requests.Session", return_value=session):
+            frame = fetch_twse_mis_snapshot(symbols)
         self.assertEqual(frame.total_volume.iloc[0], 1300)
         self.assertEqual(frame.code.iloc[0], "2330")
-        self.assertEqual(get.call_args.kwargs["headers"]["Authorization"], "Bearer secret")
-        self.assertNotIn("params", get.call_args.kwargs)
+        self.assertEqual(frame.total_volume.iloc[1], 1301)
+        self.assertEqual(session.get.call_args_list[1].kwargs["params"]["ex_ch"],
+                         "tse_2330.tw|otc_8069.tw")
 
-    def test_snapshot_http_error_includes_finmind_message(self):
+    def test_snapshot_http_error_is_reported(self):
         response = Mock(ok=False, status_code=403, reason="Forbidden")
-        response.json.return_value = {"detail": "sponsor required"}
-        with patch("src.tw_intraday_update.requests.get", return_value=response):
-            with self.assertRaisesRegex(RuntimeError, "HTTP 403.*sponsor required"):
-                fetch_finmind_snapshot("secret")
+        response.json.return_value = {}
+        session = Mock()
+        session.get.side_effect = [Mock(ok=True), response]
+        with patch("src.tw_intraday_update.requests.Session", return_value=session):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 403.*Forbidden"):
+                fetch_twse_mis_snapshot([{"code": "2330", "market": "listed"}])
+
+    def test_snapshot_skips_missing_last_trade(self):
+        response = Mock(ok=True)
+        response.json.return_value = {"rtcode": "0000", "msgArray": [{
+            "c": "2330", "d": "20260915", "t": "12:00:01", "o": "100",
+            "h": "103", "l": "99", "z": "-", "v": "1300",
+        }]}
+        session = Mock()
+        session.get.side_effect = [Mock(ok=True), response]
+        with patch("src.tw_intraday_update.requests.Session", return_value=session):
+            with self.assertRaisesRegex(RuntimeError, "資料為空"):
+                fetch_twse_mis_snapshot([{"code": "2330", "market": "listed"}])
 
     def test_public_intraday_artifact_excludes_realtime_ohlcv(self):
         rows = [{"code": "2330", "name": "台積電", "market": "listed"},
@@ -252,11 +273,11 @@ class IntradayUpdateTests(unittest.TestCase):
                    "prior_declining_days": 2, "reclaimed_previous_high": True, "data_bars": 71}
         with tempfile.TemporaryDirectory() as tmp, \
                 patch("src.tw_intraday_update.fetch_all_symbols", return_value=rows), \
-                patch("src.tw_intraday_update.fetch_finmind_snapshot", return_value=snapshot), \
+                patch("src.tw_intraday_update.fetch_twse_mis_snapshot", return_value=snapshot), \
                 patch("src.tw_intraday_update.latest_reports", return_value=(date(2026, 9, 14), Mock())), \
                 patch("src.tw_intraday_update.selected_history", return_value=history), \
                 patch("src.tw_intraday_update.signal", return_value=metrics):
-            job = IntradayUpdater(tmp, token="secret", now=datetime(2026, 9, 15, 12, 0))
+            job = IntradayUpdater(tmp, now=datetime(2026, 9, 15, 12, 0))
             job.run()
             self.assertEqual(job.status()["status"], "complete")
             folder = Path(job.status()["data_dir"])
@@ -279,8 +300,8 @@ class IntradayUpdateTests(unittest.TestCase):
         }])
         with tempfile.TemporaryDirectory() as tmp, \
                 patch("src.tw_intraday_update.fetch_all_symbols", return_value=rows), \
-                patch("src.tw_intraday_update.fetch_finmind_snapshot", return_value=snapshot):
-            job = IntradayUpdater(tmp, token="secret", now=datetime(2026, 9, 15, 12, 0))
+                patch("src.tw_intraday_update.fetch_twse_mis_snapshot", return_value=snapshot):
+            job = IntradayUpdater(tmp, now=datetime(2026, 9, 15, 12, 0))
             job.run()
             self.assertEqual(job.status()["status"], "error")
             self.assertIn("不是今天", job.status()["error"])

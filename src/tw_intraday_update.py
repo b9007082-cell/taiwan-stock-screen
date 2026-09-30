@@ -1,13 +1,11 @@
-"""Build a licence-safe noon screen from FinMind's real-time snapshot.
+"""Build a licence-safe noon screen from TWSE MIS intraday quotes.
 
 The public artifact contains only screening decisions and prior completed daily
-bars.  It deliberately excludes the real-time quote fields because FinMind's
-terms do not permit directly presenting those fields on a public web page.
+bars.  It deliberately excludes the real-time quote fields from the public site.
 """
 
 import csv
 import json
-import os
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -21,37 +19,70 @@ from scripts.screen_tw_pullback import CRITERIA, SCREENING, signal
 from src.tw_official_data import latest_reports, selected_history
 
 
-SNAPSHOT_URL = "https://api.finmindtrade.com/api/v4/taiwan_stock_tick_snapshot"
-REQUIRED = {"stock_id", "date", "open", "high", "low", "close", "total_volume"}
+SNAPSHOT_URL = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp"
+SNAPSHOT_HOME = "https://mis.twse.com.tw/stock/index.jsp"
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; TaiwanStockScreen/1.0)",
+    "Referer": SNAPSHOT_HOME,
+}
 
 
-def fetch_finmind_snapshot(token):
-    if not token:
-        raise RuntimeError("缺少 FINMIND_TOKEN；請在 GitHub Actions Secrets 設定。")
-    response = requests.get(
-        SNAPSHOT_URL,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=45,
-    )
+def _number(value):
+    """Parse MIS numeric strings while treating '-' as missing."""
+    return pd.to_numeric(str(value).replace(",", ""), errors="coerce")
+
+
+def fetch_twse_mis_snapshot(symbols, batch_size=120):
+    """Fetch listed and OTC quotes through TWSE's official MIS endpoint."""
+    records = []
+    session = requests.Session()
+    # Establish the same session used by the public MIS web page.  A failure here
+    # is harmless because the quote endpoint often works without a cookie.
     try:
-        payload = response.json()
-    except requests.JSONDecodeError:
-        payload = {}
-    if not response.ok:
-        message = payload.get("msg") or payload.get("detail") or response.reason
-        raise RuntimeError(f"FinMind 即時資料 HTTP {response.status_code}：{message}")
-    if payload.get("status") not in (None, 200):
-        raise RuntimeError(f"FinMind 即時資料失敗：{payload.get('msg', 'unknown error')}")
-    frame = pd.DataFrame(payload.get("data", []))
-    if frame.empty or not REQUIRED.issubset(frame.columns):
-        raise RuntimeError("FinMind 即時資料為空或欄位已變更。")
-    frame = frame.rename(columns={"stock_id": "code"})
-    for column in ("open", "high", "low", "close", "total_volume"):
-        frame[column] = pd.to_numeric(frame[column], errors="coerce")
-    frame["quote_time"] = pd.to_datetime(frame["date"], errors="coerce")
-    frame = frame.dropna(subset=["quote_time", "open", "high", "low", "close", "total_volume"])
-    frame["code"] = frame["code"].astype(str)
-    return frame
+        session.get(SNAPSHOT_HOME, headers=HEADERS, timeout=20)
+    except requests.RequestException:
+        pass
+    for offset in range(0, len(symbols), batch_size):
+        batch = symbols[offset:offset + batch_size]
+        channels = [f"{'tse' if row['market'] == 'listed' else 'otc'}_{row['code']}.tw"
+                    for row in batch]
+        response = session.get(
+            SNAPSHOT_URL,
+            params={"ex_ch": "|".join(channels), "json": "1", "delay": "0"},
+            headers=HEADERS,
+            timeout=45,
+        )
+        try:
+            payload = response.json()
+        except (requests.JSONDecodeError, ValueError):
+            payload = {}
+        if not response.ok:
+            raise RuntimeError(f"證交所 MIS 盤中資料 HTTP {response.status_code}：{response.reason}")
+        if payload.get("rtcode") != "0000":
+            raise RuntimeError(f"證交所 MIS 盤中資料失敗：{payload.get('rtmessage', 'unknown error')}")
+        records.extend(payload.get("msgArray", []))
+
+    parsed = []
+    for row in records:
+        quote_time = pd.to_datetime(f"{row.get('d', '')} {row.get('t', '')}",
+                                    format="%Y%m%d %H:%M:%S", errors="coerce")
+        item = {
+            "code": str(row.get("c", "")),
+            "quote_time": quote_time,
+            "open": _number(row.get("o")),
+            "high": _number(row.get("h")),
+            "low": _number(row.get("l")),
+            "close": _number(row.get("z")),
+            # MIS v is the cumulative trading volume in lots (張).
+            "total_volume": _number(row.get("v")),
+        }
+        if item["code"] and not any(pd.isna(item[key]) for key in
+                                    ("quote_time", "open", "high", "low", "close", "total_volume")):
+            parsed.append(item)
+    frame = pd.DataFrame(parsed)
+    if frame.empty:
+        raise RuntimeError("證交所 MIS 盤中資料為空或欄位已變更。")
+    return frame.drop_duplicates("code", keep="last")
 
 
 def _write_csv(path, rows, fields):
@@ -62,10 +93,9 @@ def _write_csv(path, rows, fields):
 
 
 class IntradayUpdater:
-    def __init__(self, root, activate=lambda _: None, token=None, now=None):
+    def __init__(self, root, activate=lambda _: None, now=None):
         self.root = Path(root)
         self.activate = activate
-        self.token = token if token is not None else os.environ.get("FINMIND_TOKEN")
         self.now = now
         self.state = {"status": "idle"}
 
@@ -83,28 +113,27 @@ class IntradayUpdater:
 
     def _run(self):
         now = self.now or datetime.now(ZoneInfo("Asia/Taipei"))
-        self.update(status="running", stage="取得 FinMind 盤中快照", min_volume_lots=1300)
+        self.update(status="running", stage="取得證交所／櫃買中心盤中快照", min_volume_lots=1300)
         rows = fetch_all_symbols()
-        universe = {(r["code"], r["market"]): r for r in rows}
         by_code = {r["code"]: r for r in rows}
         if not rows or not all(any(r["market"] == m for r in rows) for m in ("listed", "otc")):
             raise RuntimeError("上市或上櫃股票清單不完整，請稍後重試。")
 
-        snapshot = fetch_finmind_snapshot(self.token)
+        snapshot = fetch_twse_mis_snapshot(rows)
         snapshot = snapshot[snapshot.code.isin(by_code)].copy()
         if snapshot.empty:
-            raise RuntimeError("FinMind 快照沒有上市櫃普通股資料。")
+            raise RuntimeError("證交所 MIS 快照沒有上市櫃普通股資料。")
         quote_day = snapshot.quote_time.dt.date.mode().iloc[0]
         snapshot = snapshot[snapshot.quote_time.dt.date == quote_day].copy()
         if quote_day != now.date():
-            raise RuntimeError(f"FinMind 快照日期為 {quote_day}，不是今天；保留上次成功頁面。")
+            raise RuntimeError(f"證交所 MIS 快照日期為 {quote_day}，不是今天；保留上次成功頁面。")
         as_of = snapshot.quote_time.max()
         if pd.isna(as_of):
-            raise RuntimeError("FinMind 快照缺少有效時間。")
+            raise RuntimeError("證交所 MIS 快照缺少有效時間。")
 
         snapshot["market"] = snapshot.code.map(lambda code: by_code[code]["market"])
         snapshot["name"] = snapshot.code.map(lambda code: by_code[code]["name"])
-        # FinMind total_volume is quoted in lots; daily history stores shares.
+        # MIS total_volume is quoted in lots; daily history stores shares.
         liquid = snapshot[snapshot.total_volume >= 1300].copy()
         eligible = liquid[liquid.close > liquid.open].copy()
 
@@ -169,7 +198,7 @@ class IntradayUpdater:
         (folder / "screening_results.json").write_text(
             json.dumps(result, ensure_ascii=False), encoding="utf-8")
         (folder / "source.json").write_text(json.dumps({
-            "source": "FinMind-derived intraday signals (real-time fields not republished)",
+            "source": "TWSE MIS-derived intraday signals (real-time fields not republished)",
             "history_source": "FinMind (listed), TPEx (OTC)", "price_basis": "unadjusted",
             "market_date": str(quote_day), "as_of": as_of.isoformat(),
             "history_end": str(prior_day), "min_volume_lots": 1300,
@@ -182,5 +211,5 @@ class IntradayUpdater:
                     bundle.write(path, path.name)
         self.activate(str(folder))
         self.update(status="complete", stage="完成", data_dir=str(folder), archive=str(archive),
-                    selected=len(matches), failed=len(errors), source="FinMind-derived intraday signals")
+                    selected=len(matches), failed=len(errors), source="TWSE MIS-derived intraday signals")
 
