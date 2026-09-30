@@ -6,20 +6,27 @@ const vm = require('node:vm');
 
 function checkChart(mobile) {
   function element() {
-    return {children:[], value:'', classList:{toggle(){}, contains(){return false;}},
+    const classes = new Set();
+    return {children:[], value:'', attributes:{}, classList:{toggle(name,force){
+        const add = force === undefined ? !classes.has(name) : force;
+        if(add) classes.add(name); else classes.delete(name);
+        return add;
+      }, contains(name){return classes.has(name);}},
       append(...items){this.children.push(...items);}, replaceChildren(){this.children=[];},
-      addEventListener(){}};
+      addEventListener(){}, setAttribute(name,value){this.attributes[name]=String(value);}};
   }
   const nodes = new Map();
   const get = id => { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); };
+  const body = element();
   get('sort').value = 'code';
   const bars = Array.from({length:100}, (_,i) => ({date:String(i),open:10,high:12,low:9,close:11,tick_volume:2000000+i*1000}));
   const stock = {code:'TEST',name:'Test',ma:{},bullish_reasons:[],close_position:0.5};
   let layout, config, range, chartTraces;
-  const Plotly = {purge(){}, react(id,traces,l,c){chartTraces=traces;layout=l;config=c;},
+  let resizeCount=0;
+  const Plotly = {purge(){}, Plots:{resize(){resizeCount++;}}, react(id,traces,l,c){chartTraces=traces;layout=l;config=c;},
     relayout(id,values){range=values['xaxis.range'];}};
-  const context = vm.createContext({document:{getElementById:get,createElement:element}, Plotly,
-    window:{STOCK_DATA:{matches:[],candles:{TEST:bars},date:'2026-09-29',built_at:'2026-09-29'},
+  const context = vm.createContext({document:{body,getElementById:get,createElement:element}, Plotly,
+    window:{STOCK_DATA:{matches:[],candles:{TEST:bars},date:'2026-09-29',built_at:'2026-09-29',min_volume_lots:1500},
       Plotly,addEventListener(){},matchMedia(){return {matches:mobile,addEventListener(){}};}}});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../pages/app.js'),'utf8'), context);
   context.show(stock);
@@ -36,6 +43,7 @@ function checkChart(mobile) {
   assert.equal(chartTraces.find(trace=>trace.name==='MACD柱').yaxis,'y4');
   assert.equal(layout.yaxis3.range[1],100);
   assert.ok(layout.yaxis2.domain[0] > layout.yaxis3.domain[1]);
+  assert.equal(layout.font.size,mobile?10:12);
   assert.equal(get('zoom-out').disabled,true);
   context.zoomChart('in');
   assert.equal(range[1]-range[0],80);
@@ -54,8 +62,20 @@ function checkChart(mobile) {
   assert.equal(get('zoom-reset').disabled,true);
   context.render();
   assert.equal(get('zoom-in').disabled,true);
+  context.setChartExpanded(true);
+  assert.equal(get('stock-detail').classList.contains('chart-expanded'),true);
+  assert.equal(body.classList.contains('chart-open'),true);
+  assert.equal(get('chart-expand').attributes['aria-label'],'縮回圖表');
+  context.setChartExpanded(false);
+  assert.equal(get('stock-detail').classList.contains('chart-expanded'),false);
+  assert.equal(body.classList.contains('chart-open'),false);
+  assert.equal(get('chart-expand').attributes['aria-label'],'展開圖表');
+  assert.equal(resizeCount,2);
 }
 checkChart(true);
 checkChart(false);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), />上漲階段<\/th>/);
-console.log('Mobile and desktop chart tests passed: bounded zoom, reset, selection, empty state.');
+const css = fs.readFileSync(path.join(__dirname,'../pages/style.css'),'utf8');
+assert.match(css, /@media\(max-width:850px\)\{#chart\{height:720px\}/);
+assert.match(css, /\.detail\.chart-expanded/);
+console.log('Mobile and desktop chart tests passed: taller chart, expand mode, bounded zoom, reset, selection, empty state.');

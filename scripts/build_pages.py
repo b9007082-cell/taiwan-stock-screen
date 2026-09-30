@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.tw_daily_update import DailyUpdater
 from src.tw_intraday_update import IntradayUpdater
-from scripts.screen_tw_pullback import SCREENING
+from scripts.screen_tw_pullback import MIN_VOLUME_LOTS, SCREENING
 from src.pages_analysis import analyze_stock
 
 
@@ -45,7 +45,7 @@ def build(snapshot, destination):
         frame['date'] = pd.to_datetime(frame.time, unit='s').dt.strftime('%Y-%m-%d')
         candles[code] = frame[['date', 'open', 'high', 'low', 'close', 'tick_volume']].to_dict('records')
         shutil.copy2(snapshot / f'{code}_D1.csv', downloads / f'{code}_D1.csv')
-    archive = snapshot / f"tw_stock_{result['date']}_2000lots.zip"
+    archive = snapshot / f"tw_stock_{result['date']}_{MIN_VOLUME_LOTS}lots.zip"
     shutil.copy2(archive, downloads / 'stocks.zip')
     analysis = [{'code': s['code'], 'name': s['name'],
                  'rising_stage': s.get('rising_stage'),

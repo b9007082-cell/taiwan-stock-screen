@@ -14,6 +14,8 @@ from scripts.fetch_tw_stock_data import fetch_all_symbols
 from src.tw_official_data import latest_reports, selected_history
 
 SCREENING = "bull_pullback_or_ma_v8"
+MIN_VOLUME_LOTS = 1500
+MIN_VOLUME_SHARES = MIN_VOLUME_LOTS * 1000
 CRITERIA = {
     "structure": "Last 60 valid bars; strict pivots with 2 bars each side; alternating pivots; latest two highs and lows strictly rising; latest pivot low not subsequently breached",
     "trend": "The latest close (current price for intraday) must be strictly above its SMA20, plus ANY of: higher highs and higher lows; SMA5 > SMA10 > SMA20; SMA5 > SMA10 > SMA20 > SMA60. No additional MA slope gate.",
@@ -21,7 +23,7 @@ CRITERIA = {
     "heavy_down_volume": "Exclude if any of the previous 5 sessions closed lower with volume >= 1.5 times its preceding 10-session average",
     "candle": "close > open and previous close; low >= 99% of previous low; close position >=0.4; current volume > previous-bar volume",
     "minimum_bars": 65,
-    "min_volume_lots": 2000,
+    "min_volume_lots": MIN_VOLUME_LOTS,
     "display_indicators": "KD(5,3,3) golden cross; MACD(6,13,9) positive histogram",
 }
 
@@ -228,7 +230,7 @@ def main():
     day, latest = latest_reports(cutoff)
     universe = {(r["code"], r["market"]): r for r in fetch_all_symbols()}
     latest = latest[[key in universe for key in zip(latest.code, latest.market)]]
-    liquid = latest[latest.tick_volume >= 2000000]
+    liquid = latest[latest.tick_volume >= MIN_VOLUME_SHARES]
     candidates = liquid[liquid.close > liquid.open]
     print(f"Data date {day}; liquid {len(liquid)}; red candles {len(candidates)}", flush=True)
     start = (pd.Timestamp(day).replace(day=1) - pd.DateOffset(months=5)).date()
@@ -249,9 +251,9 @@ def main():
     found.sort(key=lambda r: (not r["reclaimed_previous_high"], r["code"]))
     result = {"date": str(day), "source": "TWSE/TPEx daily; FinMind/TPEx history; unadjusted",
               "screening": SCREENING, "criteria": CRITERIA,
-              "min_volume_lots": 2000, "liquid_universe": len(liquid), "red_candidates": len(candidates),
+              "min_volume_lots": MIN_VOLUME_LOTS, "liquid_universe": len(liquid), "red_candidates": len(candidates),
               "insufficient_history": insufficient, "matches": found}
-    path = ROOT / "output" / f"tw_bull_pullback_{day}_2000lots_v4.json"
+    path = ROOT / "output" / f"tw_bull_pullback_{day}_{MIN_VOLUME_LOTS}lots_v4.json"
     path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     write_report(result, path.with_suffix(".md"))
     print(json.dumps(result, ensure_ascii=False, indent=2))

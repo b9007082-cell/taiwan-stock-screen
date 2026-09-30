@@ -2,6 +2,7 @@
 :root .workspace{grid-template-columns:minmax(0,1fr)}
 @media (any-pointer:coarse),(max-width:850px){#chart{touch-action:pan-y pinch-zoom}}
 .chart-tools{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}.chart-tools button{width:44px;height:44px;flex:0 0 44px;font:24px system-ui;border:1px solid #bdcaca;border-radius:4px;background:white;color:#216e67;cursor:pointer}.chart-tools button:disabled{opacity:.4;cursor:default}
-#chart{height:620px}
-@media(max-width:850px){#chart{height:520px}}
+#chart{height:680px}
+body.chart-open{overflow:hidden}.detail.chart-expanded{position:fixed;inset:0;z-index:1000;padding:10px;background:#f5f7f7;overflow:hidden}.detail.chart-expanded .detail-heading,.detail.chart-expanded #metrics{display:none}.detail.chart-expanded .chart-tools{margin:0 0 6px;position:relative;z-index:2}.detail.chart-expanded #chart{height:calc(100dvh - 60px);min-height:0;margin:0}
+@media(max-width:850px){#chart{height:720px}.chart-tools{position:sticky;top:0;z-index:3;padding:4px 0;background:#f5f7f7}.detail.chart-expanded{padding:6px}.detail.chart-expanded #chart{height:calc(100dvh - 58px)}}
 .list{min-width:0}.list table{min-width:1240px}.list td:first-child,.list th:first-child{position:sticky;left:0;background:#f5f7f7;z-index:1}.list th:first-child{background:#eaf0ef}.list tr.active td:first-child{background:#e2eeea}.list thead{z-index:2}.toolbar{align-items:center}.toolbar input{flex:0 1 250px}.analysis-note{font-size:12px;line-height:1.7;color:#627273}.price-up{color:#bb3945}.price-down{color:#238366}.detail{border-top:1px solid #d8dfdf;padding-top:18px}dd{overflow-wrap:anywhere}

@@ -15,7 +15,7 @@ import pandas as pd
 import requests
 
 from scripts.fetch_tw_stock_data import fetch_all_symbols
-from scripts.screen_tw_pullback import CRITERIA, SCREENING, signal
+from scripts.screen_tw_pullback import CRITERIA, MIN_VOLUME_LOTS, SCREENING, signal
 from src.tw_official_data import latest_reports, selected_history
 
 
@@ -113,7 +113,7 @@ class IntradayUpdater:
 
     def _run(self):
         now = self.now or datetime.now(ZoneInfo("Asia/Taipei"))
-        self.update(status="running", stage="取得證交所／櫃買中心盤中快照", min_volume_lots=2000)
+        self.update(status="running", stage="取得證交所／櫃買中心盤中快照", min_volume_lots=MIN_VOLUME_LOTS)
         rows = fetch_all_symbols()
         by_code = {r["code"]: r for r in rows}
         if not rows or not all(any(r["market"] == m for r in rows) for m in ("listed", "otc")):
@@ -134,7 +134,7 @@ class IntradayUpdater:
         snapshot["market"] = snapshot.code.map(lambda code: by_code[code]["market"])
         snapshot["name"] = snapshot.code.map(lambda code: by_code[code]["name"])
         # MIS total_volume is quoted in lots; daily history stores shares.
-        liquid = snapshot[snapshot.total_volume >= 2000].copy()
+        liquid = snapshot[snapshot.total_volume >= MIN_VOLUME_LOTS].copy()
         eligible = liquid[liquid.close > liquid.open].copy()
 
         self.update(stage="取得前一完整交易日與歷史", total=len(eligible), liquid_universe=len(liquid),
@@ -148,7 +148,7 @@ class IntradayUpdater:
         matches, selected, errors = [], [], []
         groups = history.groupby(["code", "market"]) if not history.empty else None
         current_time = int((pd.Timestamp(quote_day) - pd.Timestamp("1970-01-01")).total_seconds())
-        self.update(stage="執行 2,000 張盤中篩選", done=0)
+        self.update(stage=f"執行 {MIN_VOLUME_LOTS:,} 張盤中篩選", done=0)
         for done, item in enumerate(eligible.to_dict("records"), 1):
             self.update(done=done)
             code, market = item["code"], item["market"]
@@ -191,7 +191,7 @@ class IntradayUpdater:
             export.insert(0, "date", pd.to_datetime(export.pop("time"), unit="s").dt.strftime("%Y-%m-%d"))
             export.rename(columns={"tick_volume": "volume_shares"}).to_csv(
                 folder / f"{code}_D1.csv", index=False, encoding="utf-8-sig")
-            selected.append({**by_code[code], "last_date": str(prior_day), "volume_lots": ">=2000"})
+            selected.append({**by_code[code], "last_date": str(prior_day), "volume_lots": f">={MIN_VOLUME_LOTS}"})
 
         matches.sort(key=lambda r: r["code"])
         _write_csv(folder / "tw_stock_symbols.csv", selected,
@@ -199,7 +199,7 @@ class IntradayUpdater:
         _write_csv(folder / "fetch_errors.csv", errors, ["code", "reason"])
         result = {
             "date": str(quote_day), "as_of": as_of.isoformat(), "snapshot_kind": "intraday",
-            "is_intraday": True, "screening": SCREENING, "min_volume_lots": 2000,
+            "is_intraday": True, "screening": SCREENING, "min_volume_lots": MIN_VOLUME_LOTS,
             "liquid_universe": len(liquid), "red_candidates": len(eligible),
             "matches": matches, "criteria": CRITERIA,
         }
@@ -209,10 +209,10 @@ class IntradayUpdater:
             "source": "TWSE MIS-derived intraday signals (real-time fields not republished)",
             "history_source": "FinMind (listed), TPEx (OTC)", "price_basis": "unadjusted",
             "market_date": str(quote_day), "as_of": as_of.isoformat(),
-            "history_end": str(prior_day), "min_volume_lots": 2000,
+            "history_end": str(prior_day), "min_volume_lots": MIN_VOLUME_LOTS,
             "screening": SCREENING,
         }, ensure_ascii=False), encoding="utf-8")
-        archive = folder / f"tw_stock_{quote_day}_2000lots.zip"
+        archive = folder / f"tw_stock_{quote_day}_{MIN_VOLUME_LOTS}lots.zip"
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
             for path in sorted(folder.iterdir()):
                 if path.suffix in (".csv", ".parquet", ".json"):

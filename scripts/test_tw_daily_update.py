@@ -207,8 +207,8 @@ class OfficialDataTests(unittest.TestCase):
             **r, "time": (pd.date_range(end="2026-09-14", periods=len(closes)) - pd.Timestamp("1970-01-01")) // pd.Timedelta(seconds=1),
             "open": [c - 1 for c in closes], "high": [c + 1 for c in closes],
             "low": [c - 2 for c in closes], "close": closes,
-            "tick_volume": ([1999999] * len(closes) if r["code"] == "1101"
-                            else [2000000] * (len(closes) - 1) + [2100000]),
+            "tick_volume": ([1499999] * len(closes) if r["code"] == "1101"
+                            else [1500000] * (len(closes) - 1) + [1600000]),
         }) for r in rows], ignore_index=True)
         latest = history.groupby("code").tail(1)
         with tempfile.TemporaryDirectory() as tmp, \
@@ -223,6 +223,7 @@ class OfficialDataTests(unittest.TestCase):
             result = job.status()
             self.assertEqual(result["status"], "complete")
             self.assertEqual(result["selected"], 2)
+            self.assertTrue(result["archive"].endswith("_1500lots.zip"))
             reports.assert_called_with(date(2026, 9, 14))
             with zipfile.ZipFile(result["archive"]) as bundle:
                 self.assertIsNone(bundle.testzip())
@@ -336,7 +337,7 @@ class IntradayUpdateTests(unittest.TestCase):
         snapshot = pd.DataFrame([{
             "code": "2330", "date": "2026-09-15 12:00:01",
             "quote_time": pd.Timestamp("2026-09-15 12:00:01"), "open": 100.,
-            "high": 110., "low": 99., "close": 108., "total_volume": 2000.,
+            "high": 110., "low": 99., "close": 108., "total_volume": 1500.,
         }])
         metrics = {"bullish_reasons": ["ma3"], "structure": None,
                    "kd_k": 55., "kd_d": 50., "kd_golden_cross": True, "macd_red_bar": True,
@@ -357,7 +358,7 @@ class IntradayUpdateTests(unittest.TestCase):
             folder = Path(job.status()["data_dir"])
             result = json.loads((folder / "screening_results.json").read_text(encoding="utf-8"))
             self.assertTrue(result["is_intraday"])
-            self.assertEqual(result["min_volume_lots"], 2000)
+            self.assertEqual(result["min_volume_lots"], 1500)
             published = result["matches"][0]
             self.assertTrue(published["kd_golden_cross"])
             self.assertTrue(published["macd_red_bar"])
