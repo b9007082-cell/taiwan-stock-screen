@@ -13,7 +13,7 @@ function checkChart(mobile) {
   const nodes = new Map();
   const get = id => { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); };
   get('sort').value = 'code';
-  const bars = Array.from({length:100}, (_,i) => ({date:String(i),open:10,high:12,low:9,close:11}));
+  const bars = Array.from({length:100}, (_,i) => ({date:String(i),open:10,high:12,low:9,close:11,tick_volume:2000000+i*1000}));
   const stock = {code:'TEST',name:'Test',ma:{},bullish_reasons:[],close_position:0.5};
   let layout, config, range, chartTraces;
   const Plotly = {purge(){}, react(id,traces,l,c){chartTraces=traces;layout=l;config=c;},
@@ -28,10 +28,14 @@ function checkChart(mobile) {
   assert.equal(config.doubleClick,false);
   assert.equal(layout.dragmode,false);
   assert.equal(layout.xaxis.fixedrange,true);
-  assert.equal(chartTraces.length,10);
-  assert.equal(chartTraces.find(trace=>trace.name==='K(5,3)').yaxis,'y2');
-  assert.equal(chartTraces.find(trace=>trace.name==='MACD柱').yaxis,'y3');
-  assert.equal(layout.yaxis2.range[1],100);
+  assert.equal(chartTraces.length,11);
+  assert.equal(chartTraces.find(trace=>trace.name==='成交量').yaxis,'y2');
+  assert.equal(chartTraces.find(trace=>trace.name==='成交量').y[0],2000);
+  assert.ok(chartTraces.findIndex(trace=>trace.name==='成交量') < chartTraces.findIndex(trace=>trace.name==='K(5,3)'));
+  assert.equal(chartTraces.find(trace=>trace.name==='K(5,3)').yaxis,'y3');
+  assert.equal(chartTraces.find(trace=>trace.name==='MACD柱').yaxis,'y4');
+  assert.equal(layout.yaxis3.range[1],100);
+  assert.ok(layout.yaxis2.domain[0] > layout.yaxis3.domain[1]);
   assert.equal(get('zoom-out').disabled,true);
   context.zoomChart('in');
   assert.equal(range[1]-range[0],80);
@@ -53,4 +57,5 @@ function checkChart(mobile) {
 }
 checkChart(true);
 checkChart(false);
+assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), />上漲階段<\/th>/);
 console.log('Mobile and desktop chart tests passed: bounded zoom, reset, selection, empty state.');

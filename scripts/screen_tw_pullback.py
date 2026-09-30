@@ -13,12 +13,13 @@ sys.path.insert(0, str(ROOT))
 from scripts.fetch_tw_stock_data import fetch_all_symbols
 from src.tw_official_data import latest_reports, selected_history
 
-SCREENING = "bull_pullback_or_ma_v7"
+SCREENING = "bull_pullback_or_ma_v8"
 CRITERIA = {
     "structure": "Last 60 valid bars; strict pivots with 2 bars each side; alternating pivots; latest two highs and lows strictly rising; latest pivot low not subsequently breached",
     "trend": "The latest close (current price for intraday) must be strictly above its SMA20, plus ANY of: higher highs and higher lows; SMA5 > SMA10 > SMA20; SMA5 > SMA10 > SMA20 > SMA60. No additional MA slope gate.",
     "pullback": "previous close 3-15% below previous 10-bar high; >=2 declines in previous 5 bars",
-    "candle": "close > open and previous close; low >= 99% of previous low; close position >=0.4",
+    "heavy_down_volume": "Exclude if any of the previous 5 sessions closed lower with volume >= 1.5 times its preceding 10-session average",
+    "candle": "close > open and previous close; low >= 99% of previous low; close position >=0.4; current volume > previous-bar volume",
     "minimum_bars": 65,
     "min_volume_lots": 2000,
     "display_indicators": "KD(5,3,3) golden cross; MACD(6,13,9) positive histogram",
@@ -102,6 +103,31 @@ def above_ma20(close):
     return bool(close.iloc[-1] > monthly.iloc[-1])
 
 
+def classify_rising_stage(close, averages, ma20_series, indicators):
+    """Classify a rising stock by extension, MA alignment, and momentum."""
+    price = float(close.iloc[-1])
+    distance_ma5 = (price / averages[5] - 1) * 100
+    distance_ma20 = (price / averages[20] - 1) * 100
+    ma20_slope = (float(ma20_series.iloc[-1]) / float(ma20_series.iloc[-6]) - 1) * 100
+    if distance_ma5 >= 8 or distance_ma20 >= 15:
+        return "末升段", f"距MA5 {distance_ma5:+.1f}%／距MA20 {distance_ma20:+.1f}%，短線乖離偏大"
+    if (averages[5] > averages[10] > averages[20] and ma20_slope > 0
+            and indicators["macd_red_bar"] and indicators["histogram_rising"]):
+        return "主升段", f"三線多排、MA20斜率 {ma20_slope:+.1f}%，MACD紅柱擴大"
+    return "初升段", f"距MA20 {distance_ma20:+.1f}%，多頭排列或動能尚未同時完整"
+
+
+def has_heavy_down_day(frame, lookback=5, volume_ratio=1.5):
+    """Detect distribution-like down days immediately before the signal bar."""
+    df = frame.reset_index(drop=True)
+    for i in range(max(10, len(df) - lookback - 1), len(df) - 1):
+        baseline = float(df.tick_volume.iloc[i - 10:i].mean())
+        if (df.close.iloc[i] < df.close.iloc[i - 1]
+                and baseline > 0 and df.tick_volume.iloc[i] >= baseline * volume_ratio):
+            return True
+    return False
+
+
 def signal(frame):
     df = frame.sort_values("time").drop_duplicates("time", keep="last").dropna().copy()
     df = df[df.tick_volume > 0]
@@ -117,12 +143,18 @@ def signal(frame):
     declining = int((close.diff().iloc[-6:-1] < 0).sum())
     span = today.high - today.low
     position = (today.close - today.low) / span if span > 0 else 0
+    heavy_down_volume = has_heavy_down_day(df)
+    volume_increased = bool(today.tick_volume > yesterday.tick_volume)
     stabilization = (today.close > today.open and today.close > yesterday.close
-                     and today.low >= yesterday.low * 0.99 and position >= 0.4)
+                     and today.low >= yesterday.low * 0.99 and position >= 0.4
+                     and volume_increased)
     above_monthly = above_ma20(close)
-    if not (reasons and above_monthly and 3 <= pullback <= 15 and declining >= 2 and stabilization):
+    if not (reasons and above_monthly and not heavy_down_volume
+            and 3 <= pullback <= 15 and declining >= 2 and stabilization):
         return None
     indicators = technical_indicators(df)
+    averages = {n: float(ma[n].iloc[-1]) for n in ma}
+    rising_stage, rising_stage_reason = classify_rising_stage(close, averages, ma[20], indicators)
     volume5 = df.tick_volume.tail(5).mean() / 1000
     volume10 = df.tick_volume.tail(10).mean() / 1000
     return {
@@ -131,10 +163,14 @@ def signal(frame):
         "close": float(today.close), "open": float(today.open), "high": float(today.high),
         "low": float(today.low), "previous_close": float(yesterday.close),
         "previous_high": float(yesterday.high), "previous_low": float(yesterday.low),
-        "volume_lots": float(today.tick_volume / 1000), "pullback_pct": round(pullback, 2),
+        "volume_lots": float(today.tick_volume / 1000),
+        "previous_volume_lots": float(yesterday.tick_volume / 1000),
+        "volume_increased": volume_increased, "pullback_pct": round(pullback, 2),
+        "heavy_down_volume": heavy_down_volume,
         "prior_declining_days": declining, "close_position": round(position, 3),
         "ma": {str(n): round(float(ma[n].iloc[-1]), 3) for n in ma},
         "above_ma20": above_monthly,
+        "rising_stage": rising_stage, "rising_stage_reason": rising_stage_reason,
         **indicators,
         "volume5_lots": round(float(volume5), 2), "volume10_lots": round(float(volume10), 2),
         "prior_peak": peak, "pullback_low": float(df.low.tail(6).min()),
@@ -150,7 +186,8 @@ def write_report(result, path):
              "- 最新收盤價必須嚴格高於當日月線 MA20（盤中採當下最新價）；等於或低於月線均不入選。並且多頭任一成立：頭頭高底底高、三線 MA5 > MA10 > MA20、四線 MA5 > MA10 > MA20 > MA60。",
              "- 結構分支：最近 60 根日 K，以左右各 2 根確認波段；最近兩個高點與低點均嚴格提高，最新波段低點未再跌破。不另要求均線斜率。",
              "- 回檔：前一日收盤相對此前 10 日最高價回落 3% 至 15%，此前 5 日至少 2 日收盤下跌。",
-             "- 紅 K 回升觀察：收盤 > 開盤及前日收盤，最低價不低於昨低的 99%，收盤位置至少為當日振幅的 40%。",
+             "- 爆量下跌排除：止跌紅 K 前 5 日若有收跌，且成交量達此前 10 日均量的 1.5 倍以上，即排除。",
+             "- 紅 K 回升觀察：收盤 > 開盤及前日收盤，最低價不低於昨低的 99%，收盤位置至少為當日振幅的 40%，且成交量嚴格大於前一根 K 棒。",
              "- 至少 65 根有效日 K；多頭三項以 OR 判斷，回檔與紅 K 條件仍須同時滿足。", "",
              "## 候選名單", "", "| 股票 | 收盤 | 成交量（張） | 紅K低點 | 已收復昨高 |",
              "|---|---:|---:|---:|---|"]

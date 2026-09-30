@@ -10,7 +10,8 @@ from src.tw_daily_update import DailyUpdater
 from src.tw_intraday_update import IntradayUpdater, fetch_twse_mis_snapshot
 from src.tw_official_data import parse_report, latest_reports, monthly_history, finmind_history
 from scripts.screen_tw_pullback import (signal, swing_structure, bullish_reasons,
-                                        technical_indicators, above_ma20)
+                                        technical_indicators, above_ma20, classify_rising_stage,
+                                        has_heavy_down_day)
 
 
 class PullbackSignalTests(unittest.TestCase):
@@ -24,7 +25,8 @@ class PullbackSignalTests(unittest.TestCase):
         closes = list(range(100, 180)) + [176, 173, 172, 173, 174, 177]
         return pd.DataFrame({"time": range(len(closes)), "close": closes,
                              "open": [c - 1 for c in closes], "high": [c + 1 for c in closes],
-                             "low": [c - 2 for c in closes], "tick_volume": 2000000}).astype(float)
+                             "low": [c - 2 for c in closes],
+                             "tick_volume": [2000000] * (len(closes) - 1) + [2100000]}).astype(float)
 
     def test_relaxed_low_and_close_position(self):
         frame = self.frame()
@@ -44,6 +46,17 @@ class PullbackSignalTests(unittest.TestCase):
         self.assertIsNone(signal(frame.tail(64)))
         frame.loc[85, "open"] = frame.loc[85, "close"]
         self.assertIsNone(signal(frame))
+
+    def test_red_candle_volume_must_exceed_previous_bar(self):
+        frame = self.frame()
+        frame.loc[85, "tick_volume"] = frame.loc[84, "tick_volume"]
+        self.assertIsNone(signal(frame))
+        frame.loc[85, "tick_volume"] = frame.loc[84, "tick_volume"] - 1
+        self.assertIsNone(signal(frame))
+        frame.loc[85, "tick_volume"] = frame.loc[84, "tick_volume"] + 1
+        result = signal(frame)
+        self.assertIsNotNone(result)
+        self.assertTrue(result["volume_increased"])
 
     def test_structure_branch_does_not_require_ma_slope(self):
         frame = self.frame()
@@ -109,6 +122,29 @@ class TechnicalIndicatorTests(unittest.TestCase):
             with patch('scripts.screen_tw_pullback.above_ma20', return_value=False):
                 self.assertIsNone(signal(frame))
 
+    def test_rising_stage_classification(self):
+        early = classify_rising_stage(pd.Series([102.]), {5: 101., 10: 100., 20: 99.},
+                                      pd.Series([99.] * 6),
+                                      {"macd_red_bar": False, "histogram_rising": False})
+        main = classify_rising_stage(pd.Series([106.]), {5: 105., 10: 103., 20: 101.},
+                                     pd.Series([98., 99., 99., 100., 100., 101.]),
+                                     {"macd_red_bar": True, "histogram_rising": True})
+        late = classify_rising_stage(pd.Series([120.]), {5: 110., 10: 106., 20: 102.},
+                                     pd.Series([98., 99., 100., 101., 102., 102.]),
+                                     {"macd_red_bar": True, "histogram_rising": True})
+        self.assertEqual(early[0], "初升段")
+        self.assertEqual(main[0], "主升段")
+        self.assertEqual(late[0], "末升段")
+
+    def test_heavy_down_volume_in_previous_five_days_is_excluded(self):
+        frame = PullbackSignalTests().frame()
+        frame.loc[82, "tick_volume"] = 3000000
+        self.assertTrue(has_heavy_down_day(frame))
+        with patch('scripts.screen_tw_pullback.swing_structure', return_value={'highs': [], 'lows': []}):
+            self.assertIsNone(signal(frame))
+        frame.loc[82, "tick_volume"] = 2999999
+        self.assertFalse(has_heavy_down_day(frame))
+
 
 class StructureTests(unittest.TestCase):
     def frame(self, values=None):
@@ -171,7 +207,8 @@ class OfficialDataTests(unittest.TestCase):
             **r, "time": (pd.date_range(end="2026-09-14", periods=len(closes)) - pd.Timestamp("1970-01-01")) // pd.Timedelta(seconds=1),
             "open": [c - 1 for c in closes], "high": [c + 1 for c in closes],
             "low": [c - 2 for c in closes], "close": closes,
-            "tick_volume": 1999999 if r["code"] == "1101" else 2000000,
+            "tick_volume": ([1999999] * len(closes) if r["code"] == "1101"
+                            else [2000000] * (len(closes) - 1) + [2100000]),
         }) for r in rows], ignore_index=True)
         latest = history.groupby("code").tail(1)
         with tempfile.TemporaryDirectory() as tmp, \
@@ -304,6 +341,8 @@ class IntradayUpdateTests(unittest.TestCase):
         metrics = {"bullish_reasons": ["ma3"], "structure": None,
                    "kd_k": 55., "kd_d": 50., "kd_golden_cross": True, "macd_red_bar": True,
                    "above_ma20": True,
+                   "volume_increased": True, "heavy_down_volume": False,
+                   "rising_stage": "主升段", "rising_stage_reason": "test",
                    "pullback_pct": 5.,
                    "prior_declining_days": 2, "reclaimed_previous_high": True, "data_bars": 71}
         with tempfile.TemporaryDirectory() as tmp, \
@@ -322,6 +361,9 @@ class IntradayUpdateTests(unittest.TestCase):
             published = result["matches"][0]
             self.assertTrue(published["kd_golden_cross"])
             self.assertTrue(published["macd_red_bar"])
+            self.assertTrue(published["volume_increased"])
+            self.assertFalse(published["heavy_down_volume"])
+            self.assertEqual(published["rising_stage"], "主升段")
             for field in ("open", "high", "low", "close", "total_volume", "volume_lots", "ma"):
                 self.assertNotIn(field, published)
             closed = pd.read_parquet(folder / "2330_D1.parquet")

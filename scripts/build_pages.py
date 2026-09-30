@@ -48,10 +48,13 @@ def build(snapshot, destination):
     archive = snapshot / f"tw_stock_{result['date']}_2000lots.zip"
     shutil.copy2(archive, downloads / 'stocks.zip')
     analysis = [{'code': s['code'], 'name': s['name'],
+                 'rising_stage': s.get('rising_stage'),
+                 'rising_stage_reason': s.get('rising_stage_reason'),
                  'kd_golden_cross': s.get('kd_golden_cross'),
                  'macd_red_bar': s.get('macd_red_bar'), **s['analysis']} for s in result['matches']]
     (downloads / 'analysis.json').write_text(json.dumps(analysis, ensure_ascii=False, allow_nan=False), encoding='utf-8')
-    fields = ['code', 'name', 'kd_golden_cross', 'macd_red_bar', 'current_price', 'change_pct',
+    fields = ['code', 'name', 'rising_stage', 'rising_stage_reason',
+              'kd_golden_cross', 'macd_red_bar', 'current_price', 'change_pct',
               'p_touch', 'p_hold', 'n_events', 'trend_label',
               'nearest_distance_atr', 'nearest_support', 'nearest_resistance', 'n_zones', 'error']
     pd.DataFrame(analysis).reindex(columns=fields).to_csv(downloads / 'analysis.csv', index=False, encoding='utf-8-sig')
