@@ -75,6 +75,7 @@ function checkChart(mobile) {
 checkChart(true);
 checkChart(false);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), />上漲階段<\/th>/);
+assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /actions\/workflows\/daily-pages\.yml/);
 const css = fs.readFileSync(path.join(__dirname,'../pages/style.css'),'utf8');
 assert.match(css, /@media\(max-width:850px\)\{#chart\{height:720px\}/);
 assert.match(css, /\.detail\.chart-expanded/);
