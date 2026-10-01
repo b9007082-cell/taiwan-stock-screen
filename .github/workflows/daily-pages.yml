@@ -41,7 +41,19 @@ jobs:
           restore-keys: tw-market-v1-
       - name: Build noon intraday page
         if: github.event.schedule == '30 3 * * 1-5' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'intraday')
-        run: python -u scripts/build_pages.py --mode intraday
+        run: |
+          for attempt in 1 2 3; do
+            if python -u scripts/build_pages.py --mode intraday; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::盤中更新連續失敗 3 次"
+              exit 1
+            fi
+            delay=$((attempt * 30))
+            echo "::warning::盤中資料來源暫時失敗，${delay} 秒後進行第 $((attempt + 1)) 次嘗試"
+            sleep "$delay"
+          done
       - name: Build completed daily page
         if: github.event.schedule != '30 3 * * 1-5' && !(github.event_name == 'workflow_dispatch' && inputs.mode == 'intraday')
         run: python -u scripts/build_pages.py --mode daily

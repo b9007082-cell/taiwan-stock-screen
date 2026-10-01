@@ -48,6 +48,12 @@ class AnalysisTests(unittest.TestCase):
 
 
 class PagesTests(unittest.TestCase):
+    def test_intraday_workflow_retries_transient_failures(self):
+        workflow = (Path(__file__).resolve().parents[1] / '.github' / 'workflows' / 'daily-pages.yml').read_text(encoding='utf-8')
+        self.assertIn('for attempt in 1 2 3', workflow)
+        self.assertIn('python -u scripts/build_pages.py --mode intraday', workflow)
+        self.assertIn('sleep "$delay"', workflow)
+
     def snapshot(self, path, matches):
         result = {'date': '2026-09-24', 'screening': SCREENING, 'matches': matches}
         (path / 'screening_results.json').write_text(json.dumps(result), encoding='utf-8')
