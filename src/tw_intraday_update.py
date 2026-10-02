@@ -25,6 +25,7 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; TaiwanStockScreen/1.0)",
     "Referer": SNAPSHOT_HOME,
 }
+MIN_SNAPSHOT_COVERAGE = 0.8
 
 
 def _number(value):
@@ -66,13 +67,17 @@ def fetch_twse_mis_snapshot(symbols, batch_size=120):
     for row in records:
         quote_time = pd.to_datetime(f"{row.get('d', '')} {row.get('t', '')}",
                                     format="%Y%m%d %H:%M:%S", errors="coerce")
+        trade = row.get("trade") if isinstance(row.get("trade"), dict) else {}
+        close = _number(row.get("z"))
+        if pd.isna(close):
+            close = _number(trade.get("z"))
         item = {
             "code": str(row.get("c", "")),
             "quote_time": quote_time,
             "open": _number(row.get("o")),
             "high": _number(row.get("h")),
             "low": _number(row.get("l")),
-            "close": _number(row.get("z")),
+            "close": close,
             # MIS v is the cumulative trading volume in lots (張).
             "total_volume": _number(row.get("v")),
         }
@@ -123,6 +128,12 @@ class IntradayUpdater:
         snapshot = snapshot[snapshot.code.isin(by_code)].copy()
         if snapshot.empty:
             raise RuntimeError("證交所 MIS 快照沒有上市櫃普通股資料。")
+        snapshot_coverage = len(snapshot) / len(rows)
+        if snapshot_coverage < MIN_SNAPSHOT_COVERAGE:
+            raise RuntimeError(
+                f"證交所 MIS 有效快照僅 {len(snapshot):,}/{len(rows):,} 檔"
+                f"（{snapshot_coverage:.1%}），低於安全門檻；保留上次成功頁面。"
+            )
         quote_day = snapshot.quote_time.dt.date.mode().iloc[0]
         snapshot = snapshot[snapshot.quote_time.dt.date == quote_day].copy()
         if quote_day != now.date():
@@ -200,6 +211,8 @@ class IntradayUpdater:
         result = {
             "date": str(quote_day), "as_of": as_of.isoformat(), "snapshot_kind": "intraday",
             "is_intraday": True, "screening": SCREENING, "min_volume_lots": MIN_VOLUME_LOTS,
+            "universe_size": len(rows), "snapshot_universe": len(snapshot),
+            "snapshot_coverage": round(snapshot_coverage, 4),
             "liquid_universe": len(liquid), "red_candidates": len(eligible),
             "matches": matches, "criteria": CRITERIA,
         }
@@ -210,6 +223,8 @@ class IntradayUpdater:
             "history_source": "FinMind (listed), TPEx (OTC)", "price_basis": "unadjusted",
             "market_date": str(quote_day), "as_of": as_of.isoformat(),
             "history_end": str(prior_day), "min_volume_lots": MIN_VOLUME_LOTS,
+            "universe_size": len(rows), "snapshot_universe": len(snapshot),
+            "snapshot_coverage": round(snapshot_coverage, 4),
             "screening": SCREENING,
         }, ensure_ascii=False), encoding="utf-8")
         archive = folder / f"tw_stock_{quote_day}_{MIN_VOLUME_LOTS}lots.zip"

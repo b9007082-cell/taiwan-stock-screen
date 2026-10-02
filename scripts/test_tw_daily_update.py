@@ -312,6 +312,19 @@ class IntradayUpdateTests(unittest.TestCase):
         self.assertEqual(session.get.call_args_list[1].kwargs["params"]["ex_ch"],
                          "tse_2330.tw|otc_8069.tw")
 
+    def test_snapshot_uses_nested_trade_price(self):
+        response = Mock(ok=True)
+        response.json.return_value = {"rtcode": "0000", "msgArray": [{
+            "c": "2330", "d": "20260915", "t": "12:00:01", "o": "100",
+            "h": "103", "l": "99", "z": "-", "v": "2000",
+            "trade": {"t": "12:00:00", "z": "102"},
+        }]}
+        session = Mock()
+        session.get.side_effect = [Mock(ok=True), response]
+        with patch("src.tw_intraday_update.requests.Session", return_value=session):
+            frame = fetch_twse_mis_snapshot([{"code": "2330", "market": "listed"}])
+        self.assertEqual(frame.close.iloc[0], 102)
+
     def test_snapshot_http_error_is_reported(self):
         response = Mock(ok=False, status_code=403, reason="Forbidden")
         response.json.return_value = {}
@@ -345,6 +358,10 @@ class IntradayUpdateTests(unittest.TestCase):
             "code": "2330", "date": "2026-09-15 12:00:01",
             "quote_time": pd.Timestamp("2026-09-15 12:00:01"), "open": 100.,
             "high": 110., "low": 99., "close": 108., "total_volume": 1500.,
+        }, {
+            "code": "8069", "date": "2026-09-15 12:00:01",
+            "quote_time": pd.Timestamp("2026-09-15 12:00:01"), "open": 50.,
+            "high": 51., "low": 49., "close": 50., "total_volume": 1000.,
         }])
         metrics = {"bullish_reasons": ["ma3"], "structure": None,
                    "kd_k": 55., "kd_d": 50., "kd_golden_cross": True, "macd_red_bar": True,
@@ -366,6 +383,9 @@ class IntradayUpdateTests(unittest.TestCase):
             result = json.loads((folder / "screening_results.json").read_text(encoding="utf-8"))
             self.assertTrue(result["is_intraday"])
             self.assertEqual(result["min_volume_lots"], 1500)
+            self.assertEqual(result["universe_size"], 2)
+            self.assertEqual(result["snapshot_universe"], 2)
+            self.assertEqual(result["snapshot_coverage"], 1.0)
             published = result["matches"][0]
             self.assertTrue(published["kd_golden_cross"])
             self.assertTrue(published["macd_red_bar"])
@@ -384,6 +404,9 @@ class IntradayUpdateTests(unittest.TestCase):
         snapshot = pd.DataFrame([{
             "code": "2330", "quote_time": pd.Timestamp("2026-09-14 13:30:00"),
             "open": 100., "high": 103., "low": 99., "close": 102., "total_volume": 2000.,
+        }, {
+            "code": "8069", "quote_time": pd.Timestamp("2026-09-14 13:30:00"),
+            "open": 50., "high": 51., "low": 49., "close": 50., "total_volume": 1000.,
         }])
         with tempfile.TemporaryDirectory() as tmp, \
                 patch("src.tw_intraday_update.fetch_all_symbols", return_value=rows), \
@@ -392,6 +415,21 @@ class IntradayUpdateTests(unittest.TestCase):
             job.run()
             self.assertEqual(job.status()["status"], "error")
             self.assertIn("不是今天", job.status()["error"])
+
+    def test_incomplete_snapshot_does_not_publish(self):
+        rows = [{"code": str(1000 + i), "name": str(i),
+                 "market": "listed" if i < 5 else "otc"} for i in range(10)]
+        snapshot = pd.DataFrame([{
+            "code": "1000", "quote_time": pd.Timestamp("2026-09-15 12:00:00"),
+            "open": 10., "high": 11., "low": 9., "close": 10.5, "total_volume": 2000.,
+        }])
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch("src.tw_intraday_update.fetch_all_symbols", return_value=rows), \
+                patch("src.tw_intraday_update.fetch_twse_mis_snapshot", return_value=snapshot):
+            job = IntradayUpdater(tmp, now=datetime(2026, 9, 15, 12, 0))
+            job.run()
+            self.assertEqual(job.status()["status"], "error")
+            self.assertIn("有效快照僅 1/10", job.status()["error"])
 
 if __name__ == "__main__":
     unittest.main()

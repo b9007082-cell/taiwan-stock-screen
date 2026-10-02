@@ -155,8 +155,9 @@ else {
   $('date').textContent=data.date; $('count').textContent=`${data.matches.length} 檔`;
   const age=Math.floor((Date.now()-new Date(`${data.date}T00:00:00+08:00`).getTime())/86400000);
   const asOf=data.as_of?new Date(data.as_of).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'}):'';
+  const coverage=data.snapshot_universe!=null&&data.universe_size!=null?` · 有效快照 ${data.snapshot_universe}/${data.universe_size} 檔`:'';
   $('status').textContent=data.is_intraday
-    ? `盤中暫定（截至 ${asOf}）· 累積量達 ${volumeThresholdText()} 張 ${data.liquid_universe} 檔 · 紅 K ${data.red_candidates} 檔 · 13:30 收盤前條件仍可能改變。`
+    ? `盤中暫定（截至 ${asOf}）${coverage} · 累積量達 ${volumeThresholdText()} 張 ${data.liquid_universe} 檔 · 紅 K ${data.red_candidates} 檔 · 13:30 收盤前條件仍可能改變。`
     : `成交量達標 ${data.liquid_universe} 檔 · 紅 K ${data.red_candidates} 檔 · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
   if(data.is_intraday) $('analysis-note').textContent=`本頁為盤中暫定篩選結果；成交量門檻固定為累積 ${volumeThresholdText()} 張。盤中資料取自證交所 MIS，公開頁不顯示即時價量原始欄位；圖表、支撐壓力與機率以最近完整收盤資料計算。13:30 收盤前結果仍可能改變。`;
   $('built').textContent=`網頁產生時間 ${new Date(data.built_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})}（台灣）`;
