@@ -49,6 +49,9 @@ class PullbackSignalTests(unittest.TestCase):
         self.assertIsNone(signal(frame.tail(64)))
         frame.loc[85, "open"] = frame.loc[85, "close"]
         self.assertIsNone(signal(frame))
+        waiting = signal(frame, require_stabilization=False)
+        self.assertIsNotNone(waiting)
+        self.assertFalse(waiting["red_k_confirmed"])
 
     def test_red_candle_volume_must_exceed_previous_bar(self):
         frame = self.frame()
@@ -366,7 +369,8 @@ class IntradayUpdateTests(unittest.TestCase):
         metrics = {"bullish_reasons": ["ma3"], "structure": None,
                    "kd_k": 55., "kd_d": 50., "kd_golden_cross": True, "macd_red_bar": True,
                    "above_ma20": True,
-                   "volume_increased": True, "pullback_volume_contracted": True,
+                   "volume_increased": True, "red_k_confirmed": True,
+                   "pullback_volume_contracted": True,
                    "rising_stage": "主升段", "rising_stage_reason": "test",
                    "pullback_pct": 5.,
                    "prior_declining_days": 2, "reclaimed_previous_high": True, "data_bars": 71}
@@ -382,6 +386,7 @@ class IntradayUpdateTests(unittest.TestCase):
             folder = Path(job.status()["data_dir"])
             result = json.loads((folder / "screening_results.json").read_text(encoding="utf-8"))
             self.assertTrue(result["is_intraday"])
+            self.assertEqual(result["waiting_matches"], [])
             self.assertEqual(result["min_volume_lots"], 1500)
             self.assertEqual(result["universe_size"], 2)
             self.assertEqual(result["snapshot_universe"], 2)

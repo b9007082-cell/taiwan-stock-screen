@@ -33,7 +33,8 @@ def build(snapshot, destination):
     downloads = destination / 'downloads'
     downloads.mkdir(exist_ok=True)
     candles = {}
-    for stock in result['matches']:
+    stocks = result['matches'] + result.get('waiting_matches', [])
+    for stock in stocks:
         code = stock['code']
         if not (code.isdigit() and len(code) == 4):
             raise ValueError('Invalid stock code')
@@ -47,13 +48,15 @@ def build(snapshot, destination):
         shutil.copy2(snapshot / f'{code}_D1.csv', downloads / f'{code}_D1.csv')
     archive = snapshot / f"tw_stock_{result['date']}_{MIN_VOLUME_LOTS}lots.zip"
     shutil.copy2(archive, downloads / 'stocks.zip')
+    confirmed_codes = {s['code'] for s in result['matches']}
     analysis = [{'code': s['code'], 'name': s['name'],
+                 'list_type': 'confirmed' if s['code'] in confirmed_codes else 'waiting',
                  'rising_stage': s.get('rising_stage'),
                  'rising_stage_reason': s.get('rising_stage_reason'),
                  'kd_golden_cross': s.get('kd_golden_cross'),
-                 'macd_red_bar': s.get('macd_red_bar'), **s['analysis']} for s in result['matches']]
+                 'macd_red_bar': s.get('macd_red_bar'), **s['analysis']} for s in stocks]
     (downloads / 'analysis.json').write_text(json.dumps(analysis, ensure_ascii=False, allow_nan=False), encoding='utf-8')
-    fields = ['code', 'name', 'rising_stage', 'rising_stage_reason',
+    fields = ['code', 'name', 'list_type', 'rising_stage', 'rising_stage_reason',
               'kd_golden_cross', 'macd_red_bar', 'current_price', 'change_pct',
               'p_touch', 'p_hold', 'n_events', 'trend_label',
               'nearest_distance_atr', 'nearest_support', 'nearest_resistance', 'n_zones', 'error']
@@ -71,7 +74,8 @@ def build(snapshot, destination):
     index = destination / 'index.html'
     index.write_text(index.read_text(encoding='utf-8').replace('__BUILD__', datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')), encoding='utf-8')
     (destination / '.nojekyll').touch()
-    print(f"Built {result['date']}: {len(result['matches'])} stocks")
+    print(f"Built {result['date']}: {len(result['matches'])} confirmed, "
+          f"{len(result.get('waiting_matches', []))} waiting")
 
 
 def main():

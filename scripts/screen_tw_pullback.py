@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.fetch_tw_stock_data import fetch_all_symbols
 from src.tw_official_data import latest_reports, selected_history
 
-SCREENING = "bull_pullback_or_ma_v9"
+SCREENING = "bull_pullback_or_ma_v10"
 MIN_VOLUME_LOTS = 1500
 MIN_VOLUME_SHARES = MIN_VOLUME_LOTS * 1000
 CRITERIA = {
@@ -22,6 +22,7 @@ CRITERIA = {
     "pullback": "previous close 3-15% below previous 10-bar high; >=2 declines in previous 5 bars",
     "pullback_volume": "In the previous 5 sessions, average down-session volume must be lower than average up-session volume and the five-session volume slope must be negative",
     "candle": "close > open and previous close; low >= 99% of previous low; close position >=0.4; current volume > previous-bar volume",
+    "waiting": "Meets trend, MA20, pullback, pullback-volume and liquidity rules, but the latest bar has not completed the stabilization-candle rule",
     "minimum_bars": 65,
     "min_volume_lots": MIN_VOLUME_LOTS,
     "display_indicators": "KD(5,3,3) golden cross; MACD(6,13,9) positive histogram",
@@ -139,7 +140,7 @@ def pullback_volume_contracted(frame, lookback=5):
     return bool(up_average > 0 and down_average < up_average and slope < 0)
 
 
-def signal(frame):
+def signal(frame, require_stabilization=True):
     df = frame.sort_values("time").drop_duplicates("time", keep="last").dropna().copy()
     df = df[df.tick_volume > 0]
     if len(df) < 65:
@@ -161,7 +162,9 @@ def signal(frame):
                      and volume_increased)
     above_monthly = above_ma20(close)
     if not (reasons and above_monthly and pullback_volume_shrinking
-            and 3 <= pullback <= 15 and declining >= 2 and stabilization):
+            and 3 <= pullback <= 15 and declining >= 2):
+        return None
+    if require_stabilization and not stabilization:
         return None
     indicators = technical_indicators(df)
     averages = {n: float(ma[n].iloc[-1]) for n in ma}
@@ -177,6 +180,7 @@ def signal(frame):
         "volume_lots": float(today.tick_volume / 1000),
         "previous_volume_lots": float(yesterday.tick_volume / 1000),
         "volume_increased": volume_increased, "pullback_pct": round(pullback, 2),
+        "red_k_confirmed": bool(stabilization),
         "pullback_volume_contracted": pullback_volume_shrinking,
         "prior_declining_days": declining, "close_position": round(position, 3),
         "ma": {str(n): round(float(ma[n].iloc[-1]), 3) for n in ma},

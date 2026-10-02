@@ -71,22 +71,22 @@ class DailyUpdater:
         universe = {(r["code"], r["market"]): r for r in rows}
         latest = latest[[key in universe for key in zip(latest.code, latest.market)]]
         liquid = latest[latest.tick_volume >= MIN_VOLUME_SHARES]
-        eligible = liquid[liquid.close > liquid.open]
+        red_candidates = liquid[liquid.close > liquid.open]
         folder = self.root / "data" / "tw_daily" / now.strftime("%Y%m%d_%H%M%S_%f")
         folder.mkdir(parents=True)
         self.update(stage="補齊歷史資料", market_date=target.isoformat(),
                     source="TWSE/TPEx", history_source="FinMind/TPEx", price_basis="unadjusted",
                     selected=0, min_volume_lots=MIN_VOLUME_LOTS, screening=SCREENING,
-                    liquid_universe=len(liquid), red_candidates=len(eligible))
-        selected, errors, matches = [], [], []
-        history = selected_history(start, target, eligible.to_dict("records"),
-                                   lambda done, total: self.update(done=done, total=total)) if len(eligible) else eligible.copy()
+                    liquid_universe=len(liquid), red_candidates=len(red_candidates))
+        selected, errors, matches, waiting_matches = [], [], [], []
+        history = selected_history(start, target, liquid.to_dict("records"),
+                                   lambda done, total: self.update(done=done, total=total)) if len(liquid) else liquid.copy()
         # The daily report supplies exact shares, replacing rounded monthly TPEx volume on the target day.
-        history = pd.concat([history, eligible], ignore_index=True).drop_duplicates(["code", "market", "time"], keep="last")
+        history = pd.concat([history, liquid], ignore_index=True).drop_duplicates(["code", "market", "time"], keep="last")
         history = history[history.time <= int((pd.Timestamp(target) - pd.Timestamp("1970-01-01")).total_seconds())]
         groups = history.groupby(["code", "market"])
-        self.update(stage="整理股票資料", done=0, total=len(eligible))
-        for done, item in enumerate(eligible.to_dict("records"), 1):
+        self.update(stage="整理股票資料", done=0, total=len(liquid))
+        for done, item in enumerate(liquid.to_dict("records"), 1):
             self.update(done=done)
             row = universe[(item["code"], item["market"])]
             if any(pd.isna(item[k]) for k in ("open", "high", "low", "close")):
@@ -97,10 +97,11 @@ class DailyUpdater:
             if len(frame[frame.tick_volume > 0]) < 65:
                 errors.append({"code": row["code"], "reason": "有效歷史不足 65 根日 K"})
                 continue
-            metrics = signal(frame)
+            metrics = signal(frame, require_stabilization=False)
             if metrics is None:
                 continue
-            matches.append({**row, **metrics})
+            target_list = matches if metrics["red_k_confirmed"] else waiting_matches
+            target_list.append({**row, **metrics})
             shares = float(item["tick_volume"])
             frame.to_parquet(folder / f"{row['code']}_D1.parquet", index=False)
             export = frame.copy()
@@ -110,6 +111,8 @@ class DailyUpdater:
             selected.append({**row, "last_date": str(target), "volume_lots": shares / 1000})
             self.update(done=done, selected=len(selected), failed=len(errors))
 
+        matches.sort(key=lambda r: r["code"])
+        waiting_matches.sort(key=lambda r: r["code"])
         selected.sort(key=lambda r: r["code"])
         write_csv(folder / "tw_stock_symbols.csv", selected,
                   ["code", "name", "market", "last_date", "volume_lots"])
@@ -117,7 +120,8 @@ class DailyUpdater:
         self.update(stage="建立下載檔", selected=len(selected), failed=len(errors))
         (folder / "screening_results.json").write_text(json.dumps({
             "date": str(target), "screening": SCREENING, "min_volume_lots": MIN_VOLUME_LOTS,
-            "liquid_universe": len(liquid), "red_candidates": len(eligible), "matches": matches,
+            "liquid_universe": len(liquid), "red_candidates": len(red_candidates),
+            "matches": matches, "waiting_matches": waiting_matches,
             "criteria": CRITERIA,
         }, ensure_ascii=False), encoding="utf-8")
         (folder / "source.json").write_text(json.dumps({

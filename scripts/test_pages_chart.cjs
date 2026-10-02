@@ -75,6 +75,7 @@ function checkChart(mobile) {
 checkChart(true);
 checkChart(false);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), />上漲階段<\/th>/);
+assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /回檔後等待紅 K/);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /actions\/workflows\/daily-pages\.yml/);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/app.js'),'utf8'), /有效快照/);
 const css = fs.readFileSync(path.join(__dirname,'../pages/style.css'),'utf8');

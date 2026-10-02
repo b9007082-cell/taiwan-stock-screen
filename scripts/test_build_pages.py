@@ -55,8 +55,9 @@ class PagesTests(unittest.TestCase):
         self.assertIn('python -u scripts/build_pages.py --mode daily', workflow)
         self.assertEqual(workflow.count('sleep "$delay"'), 2)
 
-    def snapshot(self, path, matches):
-        result = {'date': '2026-09-24', 'screening': SCREENING, 'matches': matches}
+    def snapshot(self, path, matches, waiting=None):
+        result = {'date': '2026-09-24', 'screening': SCREENING, 'matches': matches,
+                  'waiting_matches': waiting or []}
         (path / 'screening_results.json').write_text(json.dumps(result), encoding='utf-8')
         (path / 'source.json').write_text('{}', encoding='utf-8')
         for name in ('tw_stock_symbols.csv', 'fetch_errors.csv'):
@@ -92,6 +93,22 @@ class PagesTests(unittest.TestCase):
             self.assertTrue((path / 'site/downloads/2338_D1.csv').exists())
             analysis = json.loads((path / 'site/downloads/analysis.json').read_text(encoding='utf-8'))
             self.assertIn('error', analysis[0])
+
+    def test_waiting_snapshot_is_published_with_analysis(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            self.snapshot(path, [], [{'code': '2338', 'name': '等待股',
+                                      'red_k_confirmed': False}])
+            pd.DataFrame([{'time': 1790208000, 'open': 46.3, 'high': 47.45,
+                           'low': 46.05, 'close': 46.1, 'tick_volume': 4013030}]).to_parquet(
+                               path / '2338_D1.parquet')
+            (path / '2338_D1.csv').write_text('date,close\n2026-09-24,46.1', encoding='utf-8')
+            build(path, path / 'site')
+            text = (path / 'site/data.js').read_text(encoding='utf-8')
+            self.assertIn('"waiting_matches": [{', text)
+            analysis = json.loads((path / 'site/downloads/analysis.json').read_text(encoding='utf-8'))
+            self.assertEqual(analysis[0]['list_type'], 'waiting')
+            self.assertTrue((path / 'site/downloads/2338_D1.csv').exists())
 
     def test_old_screening_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

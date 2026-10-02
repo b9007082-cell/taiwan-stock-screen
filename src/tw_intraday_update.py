@@ -146,21 +146,21 @@ class IntradayUpdater:
         snapshot["name"] = snapshot.code.map(lambda code: by_code[code]["name"])
         # MIS total_volume is quoted in lots; daily history stores shares.
         liquid = snapshot[snapshot.total_volume >= MIN_VOLUME_LOTS].copy()
-        eligible = liquid[liquid.close > liquid.open].copy()
+        red_candidates = liquid[liquid.close > liquid.open].copy()
 
-        self.update(stage="取得前一完整交易日與歷史", total=len(eligible), liquid_universe=len(liquid),
-                    red_candidates=len(eligible), as_of=as_of.isoformat())
+        self.update(stage="取得前一完整交易日與歷史", total=len(liquid), liquid_universe=len(liquid),
+                    red_candidates=len(red_candidates), as_of=as_of.isoformat())
         prior_day, _ = latest_reports(now.date() - timedelta(days=1))
         start = (pd.Timestamp(prior_day).replace(day=1) - pd.DateOffset(months=5)).date()
-        history = selected_history(start, prior_day, eligible.to_dict("records")) if len(eligible) else pd.DataFrame()
+        history = selected_history(start, prior_day, liquid.to_dict("records")) if len(liquid) else pd.DataFrame()
 
         folder = self.root / "data" / "tw_intraday" / now.strftime("%Y%m%d_%H%M%S_%f")
         folder.mkdir(parents=True)
-        matches, selected, errors = [], [], []
+        matches, waiting_matches, selected, errors = [], [], [], []
         groups = history.groupby(["code", "market"]) if not history.empty else None
         current_time = int((pd.Timestamp(quote_day) - pd.Timestamp("1970-01-01")).total_seconds())
         self.update(stage=f"執行 {MIN_VOLUME_LOTS:,} 張盤中篩選", done=0)
-        for done, item in enumerate(eligible.to_dict("records"), 1):
+        for done, item in enumerate(liquid.to_dict("records"), 1):
             self.update(done=done)
             code, market = item["code"], item["market"]
             try:
@@ -174,7 +174,7 @@ class IntradayUpdater:
                 "low": item["low"], "close": item["close"],
                 "tick_volume": item["total_volume"] * 1000,
             }])
-            metrics = signal(pd.concat([closed, live], ignore_index=True))
+            metrics = signal(pd.concat([closed, live], ignore_index=True), require_stabilization=False)
             if metrics is None:
                 continue
             # Publish derived decisions only. Exact real-time price/OHLCV stays out of the artifact.
@@ -187,6 +187,7 @@ class IntradayUpdater:
                 "macd_red_bar": metrics["macd_red_bar"],
                 "above_ma20": metrics["above_ma20"],
                 "volume_increased": metrics["volume_increased"],
+                "red_k_confirmed": metrics["red_k_confirmed"],
                 "pullback_volume_contracted": metrics["pullback_volume_contracted"],
                 "rising_stage": metrics["rising_stage"],
                 "rising_stage_reason": metrics["rising_stage_reason"],
@@ -196,7 +197,8 @@ class IntradayUpdater:
                 "data_bars": metrics["data_bars"],
                 "volume_threshold_met": True,
             }
-            matches.append(public)
+            target_list = matches if metrics["red_k_confirmed"] else waiting_matches
+            target_list.append(public)
             closed.to_parquet(folder / f"{code}_D1.parquet", index=False)
             export = closed.copy()
             export.insert(0, "date", pd.to_datetime(export.pop("time"), unit="s").dt.strftime("%Y-%m-%d"))
@@ -205,6 +207,7 @@ class IntradayUpdater:
             selected.append({**by_code[code], "last_date": str(prior_day), "volume_lots": f">={MIN_VOLUME_LOTS}"})
 
         matches.sort(key=lambda r: r["code"])
+        waiting_matches.sort(key=lambda r: r["code"])
         _write_csv(folder / "tw_stock_symbols.csv", selected,
                    ["code", "name", "market", "last_date", "volume_lots"])
         _write_csv(folder / "fetch_errors.csv", errors, ["code", "reason"])
@@ -213,8 +216,8 @@ class IntradayUpdater:
             "is_intraday": True, "screening": SCREENING, "min_volume_lots": MIN_VOLUME_LOTS,
             "universe_size": len(rows), "snapshot_universe": len(snapshot),
             "snapshot_coverage": round(snapshot_coverage, 4),
-            "liquid_universe": len(liquid), "red_candidates": len(eligible),
-            "matches": matches, "criteria": CRITERIA,
+            "liquid_universe": len(liquid), "red_candidates": len(red_candidates),
+            "matches": matches, "waiting_matches": waiting_matches, "criteria": CRITERIA,
         }
         (folder / "screening_results.json").write_text(
             json.dumps(result, ensure_ascii=False), encoding="utf-8")
@@ -234,5 +237,6 @@ class IntradayUpdater:
                     bundle.write(path, path.name)
         self.activate(str(folder))
         self.update(status="complete", stage="完成", data_dir=str(folder), archive=str(archive),
-                    selected=len(matches), failed=len(errors), source="TWSE MIS-derived intraday signals")
+                    selected=len(matches) + len(waiting_matches), failed=len(errors),
+                    source="TWSE MIS-derived intraday signals")
 
