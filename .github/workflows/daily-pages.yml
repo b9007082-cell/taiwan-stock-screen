@@ -16,6 +16,8 @@ on:
     - cron: '30 3 * * 1-5'
     # 16:30 Asia/Taipei, Monday-Friday. Holidays use the latest complete day.
     - cron: '30 8 * * 1-5'
+    # 17:10 Asia/Taipei: backup close run in case GitHub drops the first schedule.
+    - cron: '10 9 * * 1-5'
 permissions:
   contents: read
 concurrency:
