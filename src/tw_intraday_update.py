@@ -187,6 +187,7 @@ class IntradayUpdater:
                 "macd_red_bar": metrics["macd_red_bar"],
                 "above_ma20": metrics["above_ma20"],
                 "volume_increased": metrics["volume_increased"],
+                "is_red_candle": metrics["is_red_candle"],
                 "red_k_confirmed": metrics["red_k_confirmed"],
                 "pullback_volume_contracted": metrics["pullback_volume_contracted"],
                 "rising_stage": metrics["rising_stage"],
@@ -197,8 +198,12 @@ class IntradayUpdater:
                 "data_bars": metrics["data_bars"],
                 "volume_threshold_met": True,
             }
-            target_list = matches if metrics["red_k_confirmed"] else waiting_matches
-            target_list.append(public)
+            if metrics["red_k_confirmed"]:
+                matches.append(public)
+            elif not metrics["is_red_candle"]:
+                waiting_matches.append(public)
+            else:
+                continue
             closed.to_parquet(folder / f"{code}_D1.parquet", index=False)
             export = closed.copy()
             export.insert(0, "date", pd.to_datetime(export.pop("time"), unit="s").dt.strftime("%Y-%m-%d"))

@@ -100,8 +100,12 @@ class DailyUpdater:
             metrics = signal(frame, require_stabilization=False)
             if metrics is None:
                 continue
-            target_list = matches if metrics["red_k_confirmed"] else waiting_matches
-            target_list.append({**row, **metrics})
+            if metrics["red_k_confirmed"]:
+                matches.append({**row, **metrics})
+            elif not metrics["is_red_candle"]:
+                waiting_matches.append({**row, **metrics})
+            else:
+                continue
             shares = float(item["tick_volume"])
             frame.to_parquet(folder / f"{row['code']}_D1.parquet", index=False)
             export = frame.copy()

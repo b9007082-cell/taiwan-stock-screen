@@ -51,6 +51,7 @@ class PullbackSignalTests(unittest.TestCase):
         self.assertIsNone(signal(frame))
         waiting = signal(frame, require_stabilization=False)
         self.assertIsNotNone(waiting)
+        self.assertFalse(waiting["is_red_candle"])
         self.assertFalse(waiting["red_k_confirmed"])
 
     def test_red_candle_volume_must_exceed_previous_bar(self):
@@ -369,7 +370,8 @@ class IntradayUpdateTests(unittest.TestCase):
         metrics = {"bullish_reasons": ["ma3"], "structure": None,
                    "kd_k": 55., "kd_d": 50., "kd_golden_cross": True, "macd_red_bar": True,
                    "above_ma20": True,
-                   "volume_increased": True, "red_k_confirmed": True,
+                   "volume_increased": True, "is_red_candle": True,
+                   "red_k_confirmed": True,
                    "pullback_volume_contracted": True,
                    "rising_stage": "主升段", "rising_stage_reason": "test",
                    "pullback_pct": 5.,
