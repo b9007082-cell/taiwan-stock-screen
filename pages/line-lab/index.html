@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="輸入台股代號，自動辨識支撐、壓力與趨勢線。">
+  <title>線研所｜台股自動畫線</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="線研所首頁">
+      <span class="brand-mark"><i></i><i></i><i></i></span>
+      <span>線研所 <small>LINE LAB</small></span>
+    </a>
+    <div class="market-pill" id="sourceBadge"><span></span> <b id="sourceLabel">證交所官方資料</b></div>
+    <button class="icon-button" id="themeBtn" aria-label="切換明暗模式">◐</button>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">TECHNICAL STRUCTURE, SIMPLIFIED</p>
+      <h1>把複雜的走勢，<br><em>畫成看得懂的線。</em></h1>
+      <p class="lede">輸入台股代號，自動找出關鍵支撐、壓力與趨勢結構。<br>不用猜高低點，讓價格自己說話。</p>
+      <form class="search-card" id="stockForm">
+        <label for="ticker">台股代號</label>
+        <div class="search-row">
+          <div class="ticker-input"><span>TW</span><input id="ticker" inputmode="numeric" maxlength="6" value="2330" placeholder="例如 2330" aria-describedby="tickerHelp"></div>
+          <button type="submit">開始分析 <span>→</span></button>
+        </div>
+        <div class="quick-row" id="tickerHelp">
+          <span>熱門：</span>
+          <button type="button" data-ticker="2330">2330 台積電</button>
+          <button type="button" data-ticker="2454">2454 聯發科</button>
+          <button type="button" data-ticker="2317">2317 鴻海</button>
+          <button type="button" data-ticker="0050">0050 元大台灣50</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="workspace" id="workspace" aria-live="polite">
+      <div class="stock-head">
+        <div>
+          <div class="stock-title"><h2 id="stockName">台積電</h2><span id="stockTicker">2330</span><span class="exchange" id="exchange">TWSE</span></div>
+          <div class="price-line"><strong id="lastPrice">1,015.00</strong><span id="priceChange">+18.00 (+1.81%)</span></div>
+        </div>
+        <div class="head-actions">
+          <span class="data-stamp" id="dataStamp">正在準備資料…</span>
+          <div class="periods" role="group" aria-label="時間週期">
+            <button data-period="60">3M</button><button class="active" data-period="120">6M</button><button data-period="240">1Y</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="analysis-grid">
+        <div class="chart-panel">
+          <div class="chart-toolbar">
+            <div class="legend"><span class="dot candle"></span>K線 <span class="line ma"></span>MA20 <span class="line volume"></span>成交量／MA5 <span class="line pressure"></span>波段壓力 <span class="line support"></span>波段支撐</div>
+            <div class="chart-actions">
+              <span class="trend-state" id="trendState">偵測轉折中</span>
+              <label class="chart-toggle pivot-toggle"><input type="checkbox" id="togglePivots" checked><span></span>頭、底</label>
+              <label class="chart-toggle turn-toggle"><input type="checkbox" id="toggleTurns" checked><span></span>轉折</label>
+              <label class="chart-toggle trend-toggle"><input type="checkbox" id="toggleTrend" checked><span></span>趨勢</label>
+              <button id="resetZoom">重設視圖</button>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="chart" aria-label="股票 K 線、成交量、KD 與 MACD 技術分析圖"></canvas>
+            <div class="tooltip" id="tooltip" hidden></div>
+          </div>
+          <div class="chart-note">滑鼠移動預覽、點擊鎖定跨圖虛線 · KD(5,3,3) · MACD(6,13,9) · 頭底／轉折／趨勢可隱藏</div>
+        </div>
+
+        <aside class="insight-panel">
+          <div class="score-block">
+            <div><span>結構強度</span><strong id="score">78</strong><small>/ 100</small></div>
+            <div class="score-ring" id="scoreRing"><span>偏多</span></div>
+          </div>
+          <div class="level-card resistance">
+            <div class="level-label"><span>R</span><div>波段壓力<small id="resistanceMeta">近期高點＋量價確認</small></div></div>
+            <strong id="resistance">1,042</strong>
+            <div class="distance" id="resistanceDistance">+2.7%</div>
+          </div>
+          <div class="level-card support">
+            <div class="level-label"><span>S</span><div>波段支撐<small id="supportMeta">確認低點＋量價確認</small></div></div>
+            <strong id="support">972</strong>
+            <div class="distance" id="supportDistance">-4.2%</div>
+          </div>
+          <div class="structure-copy">
+            <h3><span></span>結構判讀</h3>
+            <p id="structureText">價格位於 MA20 之上，短期結構偏多。上方接近壓力帶時留意量價變化；若回測支撐不破，結構仍完整。</p>
+          </div>
+          <button class="explain-btn" id="explainBtn">這些線怎麼算的？ <span>＋</span></button>
+        </aside>
+      </div>
+    </section>
+
+  </main>
+
+  <dialog id="methodDialog">
+    <button class="dialog-close" id="dialogClose" aria-label="關閉">×</button>
+    <p class="eyebrow">CALCULATION LOGIC</p>
+    <h2>自動畫線邏輯</h2>
+    <ol>
+      <li><strong>偵測近期波段</strong><span>先找出最近 45 個交易日的局部高點與低點。</span></li>
+      <li><strong>挑選壓力</strong><span>優先採用離現價最近、最近形成的拒絕高點。</span></li>
+      <li><strong>確認支撐</strong><span>低點需與現價保持足夠 ATR 幅度，排除日常小幅震盪。</span></li>
+      <li><strong>量價驗證</strong><span>成交量與觸及次數用來提高可信度，不再單獨決定價位。</span></li>
+    </ol>
+    <p class="disclaimer">技術線僅描述歷史價格結構，不保證未來表現，也不構成投資建議。</p>
+  </dialog>
+
+  <script src="./app.js"></script>
+</body>
+</html>
