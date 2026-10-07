@@ -51,7 +51,7 @@ def build(snapshot, destination):
                 'date': intraday_bar['date'], 'as_of': intraday_bar['as_of'],
                 'open': intraday_bar['open'], 'high': intraday_bar['high'],
                 'low': intraday_bar['low'], 'close': intraday_bar['close'],
-                'tick_volume': None, 'is_partial': True,
+                'tick_volume': intraday_bar.get('tick_volume'), 'is_partial': True,
             })
         shutil.copy2(snapshot / f'{code}_D1.csv', downloads / f'{code}_D1.csv')
     archive = snapshot / f"tw_stock_{result['date']}_{MIN_VOLUME_LOTS}lots.zip"

@@ -118,6 +118,7 @@ class PagesTests(unittest.TestCase):
             stock = {'code': '2338', 'name': '台股', 'intraday_bar': {
                 'date': '2026-09-25', 'as_of': '2026-09-25T11:30:00',
                 'open': 47.1, 'high': 48.2, 'low': 46.8, 'close': 47.9,
+                'tick_volume': 5500000,
                 'is_partial': True,
             }}
             self.snapshot(path, [stock], is_intraday=True)
@@ -129,7 +130,7 @@ class PagesTests(unittest.TestCase):
             text = (path / 'site/data.js').read_text(encoding='utf-8')
             self.assertIn('"date": "2026-09-25"', text)
             self.assertIn('"is_partial": true', text)
-            self.assertIn('"tick_volume": null', text)
+            self.assertIn('"tick_volume": 5500000', text)
             self.assertEqual(len(pd.read_parquet(path / '2338_D1.parquet')), 1)
 
     def test_old_screening_rejected(self):

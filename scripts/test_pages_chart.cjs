@@ -20,7 +20,7 @@ function checkChart(mobile, partial=false) {
   const body = element();
   get('sort').value = 'code';
   const bars = Array.from({length:100}, (_,i) => ({date:String(i),open:10,high:12,low:9,close:11,tick_volume:2000000+i*1000}));
-  if(partial) Object.assign(bars[bars.length-1], {open:11,high:13,low:10,close:12,tick_volume:null,is_partial:true});
+  if(partial) Object.assign(bars[bars.length-1], {open:11,high:13,low:10,close:12,tick_volume:2500000,is_partial:true});
   const stock = {code:'TEST',name:'Test',ma:{},bullish_reasons:[],close_position:0.5};
   let layout, config, range, chartTraces;
   let resizeCount=0;
@@ -36,15 +36,17 @@ function checkChart(mobile, partial=false) {
   assert.equal(config.doubleClick,false);
   assert.equal(layout.dragmode,false);
   assert.equal(layout.xaxis.fixedrange,true);
-  assert.equal(chartTraces.length,partial?17:16);
+  assert.equal(chartTraces.length,partial?18:16);
   assert.equal(chartTraces.find(trace=>trace.name==='完整日 K').x.length,partial?99:100);
   assert.equal(Boolean(chartTraces.find(trace=>trace.name==='盤中暫時 K')),partial);
+  assert.equal(Boolean(chartTraces.find(trace=>trace.name==='盤中暫時量')),partial);
   assert.ok(chartTraces.find(trace=>trace.name==='轉折'));
   assert.ok(chartTraces.find(trace=>trace.name==='頭'));
   assert.ok(chartTraces.find(trace=>trace.name==='底'));
   assert.equal(layout.annotations.length,partial?1:0);
   assert.equal(chartTraces.find(trace=>trace.name==='成交量').yaxis,'y2');
   assert.equal(chartTraces.find(trace=>trace.name==='成交量').y[0],2000);
+  if(partial) assert.equal(chartTraces.find(trace=>trace.name==='盤中暫時量').y[0],2500);
   assert.equal(chartTraces.find(trace=>trace.name==='量 MA5').yaxis,'y2');
   assert.equal(chartTraces.find(trace=>trace.name==='量 MA5').y[4],2002);
   assert.equal(chartTraces.find(trace=>trace.name==='量 MA10').y[9],2004.5);

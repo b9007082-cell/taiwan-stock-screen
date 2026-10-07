@@ -180,6 +180,7 @@ class IntradayUpdater:
                     "as_of": item["quote_time"].isoformat(),
                     "open": float(item["open"]), "high": float(item["high"]),
                     "low": float(item["low"]), "close": float(item["close"]),
+                    "tick_volume": int(item["total_volume"] * 1000),
                     "is_partial": True,
                 },
                 "bullish_reasons": metrics["bullish_reasons"],
@@ -229,7 +230,7 @@ class IntradayUpdater:
         (folder / "screening_results.json").write_text(
             json.dumps(result, ensure_ascii=False), encoding="utf-8")
         (folder / "source.json").write_text(json.dumps({
-            "source": "TWSE MIS intraday snapshot (temporary OHLC published)",
+            "source": "TWSE MIS intraday snapshot (temporary OHLC and cumulative volume published)",
             "history_source": "FinMind (listed), TPEx (OTC)", "price_basis": "unadjusted",
             "market_date": str(quote_day), "as_of": as_of.isoformat(),
             "history_end": str(prior_day), "min_volume_lots": MIN_VOLUME_LOTS,
