@@ -36,7 +36,7 @@ function checkChart(mobile, partial=false) {
   assert.equal(config.doubleClick,false);
   assert.equal(layout.dragmode,false);
   assert.equal(layout.xaxis.fixedrange,true);
-  assert.equal(chartTraces.length,partial?15:14);
+  assert.equal(chartTraces.length,partial?17:16);
   assert.equal(chartTraces.find(trace=>trace.name==='完整日 K').x.length,partial?99:100);
   assert.equal(Boolean(chartTraces.find(trace=>trace.name==='盤中暫時 K')),partial);
   assert.ok(chartTraces.find(trace=>trace.name==='轉折'));
@@ -45,6 +45,10 @@ function checkChart(mobile, partial=false) {
   assert.equal(layout.annotations.length,partial?1:0);
   assert.equal(chartTraces.find(trace=>trace.name==='成交量').yaxis,'y2');
   assert.equal(chartTraces.find(trace=>trace.name==='成交量').y[0],2000);
+  assert.equal(chartTraces.find(trace=>trace.name==='量 MA5').yaxis,'y2');
+  assert.equal(chartTraces.find(trace=>trace.name==='量 MA5').y[4],2002);
+  assert.equal(chartTraces.find(trace=>trace.name==='量 MA10').y[9],2004.5);
+  assert.equal(chartTraces.find(trace=>trace.name==='量 MA5').y.at(-1),partial?null:2097);
   assert.ok(chartTraces.findIndex(trace=>trace.name==='成交量') < chartTraces.findIndex(trace=>trace.name==='K(5,3)'));
   assert.equal(chartTraces.find(trace=>trace.name==='K(5,3)').yaxis,'y3');
   assert.equal(chartTraces.find(trace=>trace.name==='MACD柱').yaxis,'y4');

@@ -156,6 +156,12 @@ function show(stock) {
   visibleBars = bars.length;
   updateZoomButtons(bars.length);
   const average=n=>bars.map((b,i)=>i<n-1?null:bars.slice(i-n+1,i+1).reduce((sum,v)=>sum+v.close,0)/n);
+  const volumes=bars.map(b=>b.tick_volume==null?null:b.tick_volume/1000);
+  const volumeAverage=n=>volumes.map((value,i)=>{
+    if(value==null||i<n-1) return null;
+    const window=volumes.slice(i-n+1,i+1);
+    return window.some(item=>item==null)?null:window.reduce((sum,item)=>sum+item,0)/n;
+  });
   Plotly.react('chart',[
     ...candleTraces,
     ...structureTraces,
@@ -163,7 +169,9 @@ function show(stock) {
     {type:'scatter',mode:'lines',x:dates,y:average(10),name:'MA10',line:{color:'#647370',width:1}},
     {type:'scatter',mode:'lines',x:dates,y:average(20),name:'MA20',line:{color:'#ba851a',width:1.5}},
     {type:'scatter',mode:'lines',x:dates,y:average(60),name:'MA60',line:{color:'#537abc',width:1.5}},
-    {type:'bar',x:dates,y:bars.map(b=>b.tick_volume==null?null:b.tick_volume/1000),name:'成交量',yaxis:'y2',marker:{color:bars.map(b=>b.close>=b.open?'#c84750':'#25836b')}},
+    {type:'bar',x:dates,y:volumes,name:'成交量',yaxis:'y2',marker:{color:bars.map(b=>b.close>=b.open?'#c84750':'#25836b')}},
+    {type:'scatter',mode:'lines',x:dates,y:volumeAverage(5),name:'量 MA5',yaxis:'y2',line:{color:'#ba851a',width:1.5},connectgaps:false},
+    {type:'scatter',mode:'lines',x:dates,y:volumeAverage(10),name:'量 MA10',yaxis:'y2',line:{color:'#537abc',width:1.5},connectgaps:false},
     {type:'scatter',mode:'lines',x:dates,y:indicators.k,name:'K(5,3)',yaxis:'y3',line:{color:'#c84750',width:1.4}},
     {type:'scatter',mode:'lines',x:dates,y:indicators.d,name:'D(5,3)',yaxis:'y3',line:{color:'#537abc',width:1.4}},
     {type:'bar',x:dates,y:indicators.histogram,name:'MACD柱',yaxis:'y4',marker:{color:indicators.histogram.map(v=>v>0?'#c84750':'#25836b')}},
@@ -212,7 +220,7 @@ else {
   $('status').textContent=data.is_intraday
     ? `盤中暫定（截至 ${asOf}）${coverage} · 累積量達 ${volumeThresholdText()} 張 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · 13:30 收盤前條件仍可能改變。`
     : `成交量達標 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
-  if(data.is_intraday) $('analysis-note').textContent=`本頁為盤中暫定篩選結果；成交量門檻固定為累積 ${volumeThresholdText()} 張。圖表最右側「盤中暫時 K」使用證交所 MIS 的開、高、低、最新價，收盤前仍會變動；精確盤中成交量不公開。頭、底與轉折採 line-lab 的左右波段確認方式，可分別顯示或隱藏；暫時 K 尚未形成已確認轉折。支撐壓力與機率仍以最近完整收盤資料計算。`;
+  if(data.is_intraday) $('analysis-note').textContent=`本頁為盤中暫定篩選結果；成交量門檻固定為累積 ${volumeThresholdText()} 張。圖表最右側「盤中暫時 K」使用證交所 MIS 的開、高、低、最新價，收盤前仍會變動；精確盤中成交量不公開，因此量 MA5／MA10 只計算完整日成交量。頭、底與轉折採 line-lab 的左右波段確認方式，可分別顯示或隱藏；暫時 K 尚未形成已確認轉折。支撐壓力與機率仍以最近完整收盤資料計算。`;
   $('built').textContent=`網頁產生時間 ${new Date(data.built_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})}（台灣）`;
   for(const id of ['search','market','sort']) $(id).addEventListener(id==='search'?'input':'change',render);
   for(const view of ['confirmed','waiting']) $(view+'-tab').addEventListener('click',()=>{
