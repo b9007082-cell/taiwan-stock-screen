@@ -203,7 +203,9 @@ function render() {
     const a=stock.analysis || {};
     if(a.error) { sub.textContent+=' · 分析失敗'; sub.title=a.error; }
     const change=data.is_intraday ? null : (a.change_pct ?? (stock.previous_close > 0 ? (stock.close/stock.previous_close-1)*100 : null));
-    const values=[data.is_intraday?'—':nullable(a.current_price ?? stock.close),change == null?'—':`${change>=0?'+':''}${number(change)}%`,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',stock.rising_stage || '—',yesNo(stock.kd_golden_cross),yesNo(stock.macd_red_bar),a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?`≥${volumeThresholdText()}`:number(stock.volume_lots),`${stock.pullback_pct}%`];
+    const currentPrice=data.is_intraday ? stock.intraday_bar?.close : (a.current_price ?? stock.close);
+    const priceText=currentPrice==null?'—':`${number(currentPrice)}${data.is_intraday?'（盤中）':''}`;
+    const values=[priceText,change == null?'—':`${change>=0?'+':''}${number(change)}%`,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',stock.rising_stage || '—',yesNo(stock.kd_golden_cross),yesNo(stock.macd_red_bar),a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?`≥${volumeThresholdText()}`:number(stock.volume_lots),`${stock.pullback_pct}%`];
     for(const [i,value] of values.entries()) { const td=document.createElement('td'); td.textContent=value; if(i===1 && change!=null) td.className=change>=0?'price-up':'price-down'; row.append(td); }
     $('rows').append(row);
   }
@@ -214,6 +216,8 @@ if(!data) { $('status').textContent='資料載入失敗，請重新整理或稍�
 else {
   const waiting=data.waiting_matches || [];
   $('date').textContent=data.date;
+  $('current-price-heading').textContent='現價';
+  $('current-price-heading').title=data.is_intraday?'證交所／櫃買中心盤中最新價，收盤前仍會變動':'資料日收盤價';
   $('confirmed-count').textContent=`${data.matches.length} 檔`;
   $('waiting-count').textContent=`${waiting.length} 檔`;
   const age=Math.floor((Date.now()-new Date(`${data.date}T00:00:00+08:00`).getTime())/86400000);

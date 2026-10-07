@@ -93,6 +93,9 @@ assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'),
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /toggle-pivots[^>]*type="checkbox" checked/);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /toggle-turns[^>]*type="checkbox" checked/);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/app.js'),'utf8'), /有效快照/);
+assert.match(fs.readFileSync(path.join(__dirname,'../pages/app.js'),'utf8'), /stock\.intraday_bar\?\.close/);
+assert.match(fs.readFileSync(path.join(__dirname,'../pages/app.js'),'utf8'), /data\.is_intraday\?'（盤中）'/);
+assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /id="current-price-heading"/);
 const css = fs.readFileSync(path.join(__dirname,'../pages/style.css'),'utf8');
 assert.match(css, /@media\(max-width:850px\)\{#chart\{height:720px\}/);
 assert.match(css, /\.detail\.chart-expanded/);
