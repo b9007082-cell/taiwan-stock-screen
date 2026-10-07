@@ -202,10 +202,13 @@ function render() {
     sub.textContent=stock.market==='listed'?'上市':'上櫃'; cell.append(button,sub); row.append(cell);
     const a=stock.analysis || {};
     if(a.error) { sub.textContent+=' · 分析失敗'; sub.title=a.error; }
-    const change=data.is_intraday ? null : (a.change_pct ?? (stock.previous_close > 0 ? (stock.close/stock.previous_close-1)*100 : null));
     const currentPrice=data.is_intraday ? stock.intraday_bar?.close : (a.current_price ?? stock.close);
+    const change=data.is_intraday
+      ? (currentPrice!=null&&stock.previous_close>0 ? (currentPrice/stock.previous_close-1)*100 : null)
+      : (a.change_pct ?? (stock.previous_close > 0 ? (stock.close/stock.previous_close-1)*100 : null));
     const priceText=currentPrice==null?'—':`${number(currentPrice)}${data.is_intraday?'（盤中）':''}`;
-    const values=[priceText,change == null?'—':`${change>=0?'+':''}${number(change)}%`,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',stock.rising_stage || '—',yesNo(stock.kd_golden_cross),yesNo(stock.macd_red_bar),a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?`≥${volumeThresholdText()}`:number(stock.volume_lots),`${stock.pullback_pct}%`];
+    const changeText=change==null?'—':`${change>=0?'+':''}${number(change)}%${data.is_intraday?'（盤中）':''}`;
+    const values=[priceText,changeText,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',stock.rising_stage || '—',yesNo(stock.kd_golden_cross),yesNo(stock.macd_red_bar),a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?`≥${volumeThresholdText()}`:number(stock.volume_lots),`${stock.pullback_pct}%`];
     for(const [i,value] of values.entries()) { const td=document.createElement('td'); td.textContent=value; if(i===1 && change!=null) td.className=change>=0?'price-up':'price-down'; row.append(td); }
     $('rows').append(row);
   }
