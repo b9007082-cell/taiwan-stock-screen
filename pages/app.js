@@ -30,9 +30,26 @@ function chartIndicators(bars) {
   const signal=ema(dif,9), histogram=dif.map((value,i)=>value-signal[i]);
   return {k,d,dif,signal,histogram};
 }
+function trendStructure(bars) {
+  const windowSize=bars.length>180?5:4, highs=[], lows=[];
+  for(let i=windowSize;i<bars.length-windowSize;i++) {
+    const window=bars.slice(i-windowSize,i+windowSize+1), bar=bars[i];
+    if(bar.high===Math.max(...window.map(item=>item.high))) highs.push({i,value:bar.high,date:bar.date,type:'high'});
+    if(bar.low===Math.min(...window.map(item=>item.low))) lows.push({i,value:bar.low,date:bar.date,type:'low'});
+  }
+  const pivots=[];
+  for(const pivot of [...highs,...lows].sort((a,b)=>a.i-b.i)) {
+    const last=pivots.at(-1);
+    if(!last||last.type!==pivot.type) pivots.push(pivot);
+    else if((pivot.type==='high'&&pivot.value>last.value)||(pivot.type==='low'&&pivot.value<last.value)) pivots[pivots.length-1]=pivot;
+  }
+  return {highs:pivots.filter(p=>p.type==='high'),lows:pivots.filter(p=>p.type==='low'),pivots};
+}
 let selected;
 let activeView = 'confirmed';
 let visibleBars = 0;
+let showPivots = true;
+let showTurns = true;
 const currentStocks = () => activeView === 'waiting' ? (data.waiting_matches || []) : data.matches;
 function zoomChart(action) {
   if (!window.Plotly || !selected) return;
@@ -62,6 +79,16 @@ function setChartExpanded(expanded) {
   if (window.Plotly?.Plots?.resize) Plotly.Plots.resize($('chart'));
 }
 $('chart-expand').addEventListener('click', () => setChartExpanded(!chartExpanded));
+$('toggle-pivots').addEventListener('change', event => {
+  showPivots=event.target.checked;
+  const stock=currentStocks().find(item=>item.code===selected);
+  if(stock) show(stock);
+});
+$('toggle-turns').addEventListener('change', event => {
+  showTurns=event.target.checked;
+  const stock=currentStocks().find(item=>item.code===selected);
+  if(stock) show(stock);
+});
 window.addEventListener('keydown', event => {
   if (event.key === 'Escape' && chartExpanded) setChartExpanded(false);
 });
@@ -118,12 +145,20 @@ function show(stock) {
   const candleTraces=[{type:'candlestick',x:completedBars.map(b=>b.date),open:completedBars.map(b=>b.open),high:completedBars.map(b=>b.high),low:completedBars.map(b=>b.low),close:completedBars.map(b=>b.close),name:'完整日 K',increasing:{line:{color:'#c84750'}},decreasing:{line:{color:'#25836b'}}}];
   if(partialBars.length) candleTraces.push({type:'candlestick',x:partialBars.map(b=>b.date),open:partialBars.map(b=>b.open),high:partialBars.map(b=>b.high),low:partialBars.map(b=>b.low),close:partialBars.map(b=>b.close),name:'盤中暫時 K',increasing:{line:{color:'#e06b32',width:3}},decreasing:{line:{color:'#3b8fbc',width:3}}});
   const indicators=chartIndicators(bars);
+  const compact = touchChart.matches;
+  const structure=trendStructure(bars);
+  const structureTraces=[];
+  if(showTurns) structureTraces.push({type:'scatter',mode:'lines',x:structure.pivots.map(p=>p.date),y:structure.pivots.map(p=>p.value),name:'轉折',line:{color:'#687575',width:1.5},hovertemplate:'%{x}<br>轉折 %{y}<extra></extra>'});
+  if(showPivots) structureTraces.push(
+    {type:'scatter',mode:'markers+text',x:structure.highs.map(p=>p.date),y:structure.highs.map(p=>p.value),text:structure.highs.map(()=>'頭'),textposition:'top center',name:'頭',marker:{color:'#c84750',size:7,symbol:'triangle-down'},textfont:{color:'#a7333d',size:compact?9:11},cliponaxis:false,hovertemplate:'%{x}<br>頭 %{y}<extra></extra>'},
+    {type:'scatter',mode:'markers+text',x:structure.lows.map(p=>p.date),y:structure.lows.map(p=>p.value),text:structure.lows.map(()=>'底'),textposition:'bottom center',name:'底',marker:{color:'#25836b',size:7,symbol:'triangle-up'},textfont:{color:'#196b57',size:compact?9:11},cliponaxis:false,hovertemplate:'%{x}<br>底 %{y}<extra></extra>'}
+  );
   visibleBars = bars.length;
   updateZoomButtons(bars.length);
   const average=n=>bars.map((b,i)=>i<n-1?null:bars.slice(i-n+1,i+1).reduce((sum,v)=>sum+v.close,0)/n);
-  const compact = touchChart.matches;
   Plotly.react('chart',[
     ...candleTraces,
+    ...structureTraces,
     {type:'scatter',mode:'lines',x:dates,y:average(5),name:'MA5',line:{color:'#966690',width:1}},
     {type:'scatter',mode:'lines',x:dates,y:average(10),name:'MA10',line:{color:'#647370',width:1}},
     {type:'scatter',mode:'lines',x:dates,y:average(20),name:'MA20',line:{color:'#ba851a',width:1.5}},
@@ -177,7 +212,7 @@ else {
   $('status').textContent=data.is_intraday
     ? `盤中暫定（截至 ${asOf}）${coverage} · 累積量達 ${volumeThresholdText()} 張 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · 13:30 收盤前條件仍可能改變。`
     : `成交量達標 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
-  if(data.is_intraday) $('analysis-note').textContent=`本頁為盤中暫定篩選結果；成交量門檻固定為累積 ${volumeThresholdText()} 張。圖表最右側「盤中暫時 K」使用證交所 MIS 的開、高、低、最新價，收盤前仍會變動；精確盤中成交量不公開。支撐壓力與機率仍以最近完整收盤資料計算。`;
+  if(data.is_intraday) $('analysis-note').textContent=`本頁為盤中暫定篩選結果；成交量門檻固定為累積 ${volumeThresholdText()} 張。圖表最右側「盤中暫時 K」使用證交所 MIS 的開、高、低、最新價，收盤前仍會變動；精確盤中成交量不公開。頭、底與轉折採 line-lab 的左右波段確認方式，可分別顯示或隱藏；暫時 K 尚未形成已確認轉折。支撐壓力與機率仍以最近完整收盤資料計算。`;
   $('built').textContent=`網頁產生時間 ${new Date(data.built_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})}（台灣）`;
   for(const id of ['search','market','sort']) $(id).addEventListener(id==='search'?'input':'change',render);
   for(const view of ['confirmed','waiting']) $(view+'-tab').addEventListener('click',()=>{
