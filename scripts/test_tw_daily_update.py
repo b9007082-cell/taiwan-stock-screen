@@ -350,7 +350,7 @@ class IntradayUpdateTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "資料為空"):
                 fetch_twse_mis_snapshot([{"code": "2330", "market": "listed"}])
 
-    def test_public_intraday_artifact_excludes_realtime_ohlcv(self):
+    def test_public_intraday_artifact_includes_temporary_ohlc_only(self):
         rows = [{"code": "2330", "name": "台積電", "market": "listed"},
                 {"code": "8069", "name": "元太", "market": "otc"}]
         times = (pd.date_range(end="2026-09-14", periods=70) - pd.Timestamp("1970-01-01")) // pd.Timedelta(seconds=1)
@@ -399,6 +399,13 @@ class IntradayUpdateTests(unittest.TestCase):
             self.assertTrue(published["volume_increased"])
             self.assertTrue(published["pullback_volume_contracted"])
             self.assertEqual(published["rising_stage"], "主升段")
+            self.assertEqual(published["intraday_bar"], {
+                "date": "2026-09-15", "as_of": "2026-09-15T12:00:01",
+                "open": 100., "high": 110., "low": 99., "close": 108.,
+                "is_partial": True,
+            })
+            self.assertNotIn("tick_volume", published["intraday_bar"])
+            self.assertNotIn("total_volume", published["intraday_bar"])
             for field in ("open", "high", "low", "close", "total_volume", "volume_lots", "ma"):
                 self.assertNotIn(field, published)
             closed = pd.read_parquet(folder / "2330_D1.parquet")

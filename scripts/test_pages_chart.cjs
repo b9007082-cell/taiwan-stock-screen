@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function checkChart(mobile) {
+function checkChart(mobile, partial=false) {
   function element() {
     const classes = new Set();
     return {children:[], value:'', attributes:{}, classList:{toggle(name,force){
@@ -20,6 +20,7 @@ function checkChart(mobile) {
   const body = element();
   get('sort').value = 'code';
   const bars = Array.from({length:100}, (_,i) => ({date:String(i),open:10,high:12,low:9,close:11,tick_volume:2000000+i*1000}));
+  if(partial) Object.assign(bars[bars.length-1], {open:11,high:13,low:10,close:12,tick_volume:null,is_partial:true});
   const stock = {code:'TEST',name:'Test',ma:{},bullish_reasons:[],close_position:0.5};
   let layout, config, range, chartTraces;
   let resizeCount=0;
@@ -35,7 +36,10 @@ function checkChart(mobile) {
   assert.equal(config.doubleClick,false);
   assert.equal(layout.dragmode,false);
   assert.equal(layout.xaxis.fixedrange,true);
-  assert.equal(chartTraces.length,11);
+  assert.equal(chartTraces.length,partial?12:11);
+  assert.equal(chartTraces.find(trace=>trace.name==='完整日 K').x.length,partial?99:100);
+  assert.equal(Boolean(chartTraces.find(trace=>trace.name==='盤中暫時 K')),partial);
+  assert.equal(layout.annotations.length,partial?1:0);
   assert.equal(chartTraces.find(trace=>trace.name==='成交量').yaxis,'y2');
   assert.equal(chartTraces.find(trace=>trace.name==='成交量').y[0],2000);
   assert.ok(chartTraces.findIndex(trace=>trace.name==='成交量') < chartTraces.findIndex(trace=>trace.name==='K(5,3)'));
@@ -72,8 +76,8 @@ function checkChart(mobile) {
   assert.equal(get('chart-expand').attributes['aria-label'],'展開圖表');
   assert.equal(resizeCount,2);
 }
-checkChart(true);
-checkChart(false);
+checkChart(true,true);
+checkChart(false,false);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), />上漲階段<\/th>/);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /回檔後等待紅 K/);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /actions\/workflows\/daily-pages\.yml/);

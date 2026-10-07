@@ -55,9 +55,11 @@ class PagesTests(unittest.TestCase):
         self.assertIn('python -u scripts/build_pages.py --mode daily', workflow)
         self.assertEqual(workflow.count('sleep "$delay"'), 2)
 
-    def snapshot(self, path, matches, waiting=None):
+    def snapshot(self, path, matches, waiting=None, is_intraday=False):
         result = {'date': '2026-09-24', 'screening': SCREENING, 'matches': matches,
                   'waiting_matches': waiting or []}
+        if is_intraday:
+            result['is_intraday'] = True
         (path / 'screening_results.json').write_text(json.dumps(result), encoding='utf-8')
         (path / 'source.json').write_text('{}', encoding='utf-8')
         for name in ('tw_stock_symbols.csv', 'fetch_errors.csv'):
@@ -109,6 +111,26 @@ class PagesTests(unittest.TestCase):
             analysis = json.loads((path / 'site/downloads/analysis.json').read_text(encoding='utf-8'))
             self.assertEqual(analysis[0]['list_type'], 'waiting')
             self.assertTrue((path / 'site/downloads/2338_D1.csv').exists())
+
+    def test_intraday_temporary_candle_is_appended_to_public_chart_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            stock = {'code': '2338', 'name': '台股', 'intraday_bar': {
+                'date': '2026-09-25', 'as_of': '2026-09-25T11:30:00',
+                'open': 47.1, 'high': 48.2, 'low': 46.8, 'close': 47.9,
+                'is_partial': True,
+            }}
+            self.snapshot(path, [stock], is_intraday=True)
+            pd.DataFrame([{'time': 1790208000, 'open': 46.3, 'high': 47.45,
+                           'low': 46.05, 'close': 47.1, 'tick_volume': 4013030}]).to_parquet(
+                               path / '2338_D1.parquet')
+            (path / '2338_D1.csv').write_text('date,close\n2026-09-24,47.1', encoding='utf-8')
+            build(path, path / 'site')
+            text = (path / 'site/data.js').read_text(encoding='utf-8')
+            self.assertIn('"date": "2026-09-25"', text)
+            self.assertIn('"is_partial": true', text)
+            self.assertIn('"tick_volume": null', text)
+            self.assertEqual(len(pd.read_parquet(path / '2338_D1.parquet')), 1)
 
     def test_old_screening_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

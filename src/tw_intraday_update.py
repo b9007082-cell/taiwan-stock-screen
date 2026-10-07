@@ -1,8 +1,4 @@
-"""Build a licence-safe noon screen from TWSE MIS intraday quotes.
-
-The public artifact contains only screening decisions and prior completed daily
-bars.  It deliberately excludes the real-time quote fields from the public site.
-"""
+"""Build a noon screen and a clearly marked temporary candle from TWSE MIS."""
 
 import csv
 import json
@@ -177,9 +173,15 @@ class IntradayUpdater:
             metrics = signal(pd.concat([closed, live], ignore_index=True), require_stabilization=False)
             if metrics is None:
                 continue
-            # Publish derived decisions only. Exact real-time price/OHLCV stays out of the artifact.
             public = {
                 "code": code, "name": item["name"], "market": market,
+                "intraday_bar": {
+                    "date": str(quote_day),
+                    "as_of": item["quote_time"].isoformat(),
+                    "open": float(item["open"]), "high": float(item["high"]),
+                    "low": float(item["low"]), "close": float(item["close"]),
+                    "is_partial": True,
+                },
                 "bullish_reasons": metrics["bullish_reasons"],
                 "structure": metrics["structure"],
                 "kd_k": metrics["kd_k"], "kd_d": metrics["kd_d"],
@@ -227,7 +229,7 @@ class IntradayUpdater:
         (folder / "screening_results.json").write_text(
             json.dumps(result, ensure_ascii=False), encoding="utf-8")
         (folder / "source.json").write_text(json.dumps({
-            "source": "TWSE MIS-derived intraday signals (real-time fields not republished)",
+            "source": "TWSE MIS intraday snapshot (temporary OHLC published)",
             "history_source": "FinMind (listed), TPEx (OTC)", "price_basis": "unadjusted",
             "market_date": str(quote_day), "as_of": as_of.isoformat(),
             "history_end": str(prior_day), "min_volume_lots": MIN_VOLUME_LOTS,
@@ -243,5 +245,5 @@ class IntradayUpdater:
         self.activate(str(folder))
         self.update(status="complete", stage="完成", data_dir=str(folder), archive=str(archive),
                     selected=len(matches) + len(waiting_matches), failed=len(errors),
-                    source="TWSE MIS-derived intraday signals")
+                    source="TWSE MIS intraday snapshot")
 
