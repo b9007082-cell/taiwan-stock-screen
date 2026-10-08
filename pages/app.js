@@ -119,11 +119,13 @@ function show(stock) {
   const labels={hhhl:'頭頭高底底高',ma3:'三線多排',ma4:'四線多排'};
   const ma=stock.ma || {};
   const temporary=stock.intraday_bar || {};
+  const mainForce=stock.main_force || [];
+  const latestMainForce=mainForce.at(-1);
   const highLabel=stock.red_k_confirmed?'紅 K 高點':'今日 K 高點';
   const lowLabel=stock.red_k_confirmed?'紅 K 低點':'今日 K 低點';
   const details = data.is_intraday
-    ? [['訊號狀態',stock.red_k_confirmed?'止跌紅 K':'等待紅 K'],['暫時 K 截至',temporary.as_of?new Date(temporary.as_of).toLocaleTimeString('zh-TW',{timeZone:'Asia/Taipei'}):'—'],['暫時開／高／低／現',temporary.open==null?'—':`${number(temporary.open)}／${number(temporary.high)}／${number(temporary.low)}／${number(temporary.close)}`],['盤中累積成交量',temporary.tick_volume==null?'—':`${number(temporary.tick_volume/1000)} 張`],['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['位於月線之上',yesNo(stock.above_ma20)],['紅 K 量大於前 K',yesNo(stock.volume_increased)],['回檔下跌量縮',yesNo(stock.pullback_volume_contracted)],['上漲階段',stock.rising_stage || '—'],['階段依據',stock.rising_stage_reason || '—'],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['成交量門檻',`已達 ${volumeThresholdText()} 張`],['回檔幅度',`${stock.pullback_pct}%`],['歷史日 K',stock.data_bars]]
-    : [['訊號狀態',stock.red_k_confirmed?'止跌紅 K':'等待紅 K'],['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['位於月線之上',yesNo(stock.above_ma20)],['紅 K 量大於前 K',yesNo(stock.volume_increased)],['回檔下跌量縮',yesNo(stock.pullback_volume_contracted)],['上漲階段',stock.rising_stage || '—'],['階段依據',stock.rising_stage_reason || '—'],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['MA5',ma['5']],['MA10',ma['10']],['MA20',ma['20']],['MA60',ma['60']],['昨收',stock.previous_close],[highLabel,stock.high],[lowLabel,stock.low],['近六日低點',stock.pullback_low],['回檔幅度',`${stock.pullback_pct}%`],['收盤位置',`${number(stock.close_position*100)}%`],['歷史日 K',stock.data_bars]];
+    ? [['訊號狀態',stock.red_k_confirmed?'止跌紅 K':'等待紅 K'],['暫時 K 截至',temporary.as_of?new Date(temporary.as_of).toLocaleTimeString('zh-TW',{timeZone:'Asia/Taipei'}):'—'],['暫時開／高／低／現',temporary.open==null?'—':`${number(temporary.open)}／${number(temporary.high)}／${number(temporary.low)}／${number(temporary.close)}`],['盤中累積成交量',temporary.tick_volume==null?'—':`${number(temporary.tick_volume/1000)} 張`],['主力買賣超',latestMainForce?`${latestMainForce.date} ${latestMainForce.net_lots>=0?'+':''}${number(latestMainForce.net_lots)} 張`:'—'],['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['位於月線之上',yesNo(stock.above_ma20)],['紅 K 量大於前 K',yesNo(stock.volume_increased)],['回檔下跌量縮',yesNo(stock.pullback_volume_contracted)],['上漲階段',stock.rising_stage || '—'],['階段依據',stock.rising_stage_reason || '—'],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['成交量門檻',`已達 ${volumeThresholdText()} 張`],['回檔幅度',`${stock.pullback_pct}%`],['歷史日 K',stock.data_bars]]
+    : [['訊號狀態',stock.red_k_confirmed?'止跌紅 K':'等待紅 K'],['主力買賣超',latestMainForce?`${latestMainForce.date} ${latestMainForce.net_lots>=0?'+':''}${number(latestMainForce.net_lots)} 張`:'—'],['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['位於月線之上',yesNo(stock.above_ma20)],['紅 K 量大於前 K',yesNo(stock.volume_increased)],['回檔下跌量縮',yesNo(stock.pullback_volume_contracted)],['上漲階段',stock.rising_stage || '—'],['階段依據',stock.rising_stage_reason || '—'],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['MA5',ma['5']],['MA10',ma['10']],['MA20',ma['20']],['MA60',ma['60']],['昨收',stock.previous_close],[highLabel,stock.high],[lowLabel,stock.low],['近六日低點',stock.pullback_low],['回檔幅度',`${stock.pullback_pct}%`],['收盤位置',`${number(stock.close_position*100)}%`],['歷史日 K',stock.data_bars]];
   for (const [label, value] of details) {
     const item=document.createElement('div'), term=document.createElement('dt'), desc=document.createElement('dd');
     term.textContent=label; desc.textContent=typeof value==='number'?number(value):value;
@@ -178,15 +180,17 @@ function show(stock) {
     {type:'scatter',mode:'lines',x:dates,y:indicators.d,name:'D(5,3)',yaxis:'y3',line:{color:'#537abc',width:1.4}},
     {type:'bar',x:dates,y:indicators.histogram,name:'MACD柱',yaxis:'y4',marker:{color:indicators.histogram.map(v=>v>0?'#c84750':'#25836b')}},
     {type:'scatter',mode:'lines',x:dates,y:indicators.dif,name:'DIF(6,13)',yaxis:'y4',line:{color:'#ba851a',width:1.3}},
-    {type:'scatter',mode:'lines',x:dates,y:indicators.signal,name:'Signal(9)',yaxis:'y4',line:{color:'#537abc',width:1.3}}
+    {type:'scatter',mode:'lines',x:dates,y:indicators.signal,name:'Signal(9)',yaxis:'y4',line:{color:'#537abc',width:1.3}},
+    ...(mainForce.length?[{type:'scatter',mode:'lines+markers',x:mainForce.map(item=>item.date),y:mainForce.map(item=>item.net_lots),customdata:mainForce.map(item=>[item.buy_lots,item.sell_lots]),name:'主力買賣超',yaxis:'y5',line:{color:'#68578f',width:2,shape:'spline',smoothing:0.6},marker:{size:5,color:mainForce.map(item=>item.net_lots>=0?'#c84750':'#25836b')},hovertemplate:'%{x}<br>淨買賣超 %{y:,.0f} 張<br>買超 %{customdata[0]:,.0f} 張<br>賣超 %{customdata[1]:,.0f} 張<extra></extra>'}]:[])
   ],{margin:compact?{t:44,l:46,r:8,b:34}:{t:34,l:50,r:12,b:38},paper_bgcolor:'#f5f7f7',plot_bgcolor:'#f5f7f7',font:{family:'system-ui',color:'#526363',size:compact?10:12},dragmode:false,
-    xaxis:{type:'category',nticks:5,rangeslider:{visible:false},fixedrange:true,autorange:true,anchor:'y4'},
-    yaxis:{domain:[0.55,1],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'價格'},
-    yaxis2:{domain:[0.40,0.50],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'量(張)'},
-    yaxis3:{domain:[0.20,0.34],fixedrange:true,range:[0,100],gridcolor:'#dfe6e5',title:'KD'},
-    yaxis4:{domain:[0,0.14],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'MACD'},
-    shapes:[{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:20,y1:20,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:80,y1:80,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y4',y0:0,y1:0,line:{color:'#9aa8a7',width:1}}],
-    annotations:partialBars.map(b=>({xref:'x',yref:'y',x:b.date,y:b.high,text:'盤中暫時 K',showarrow:true,arrowhead:2,ax:0,ay:-24,font:{color:'#9a4b1f',size:compact?9:11}})),
+    xaxis:{type:'category',nticks:5,rangeslider:{visible:false},fixedrange:true,autorange:true,anchor:'y5'},
+    yaxis:{domain:[0.62,1],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'價格'},
+    yaxis2:{domain:[0.50,0.58],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'量(張)'},
+    yaxis3:{domain:[0.34,0.45],fixedrange:true,range:[0,100],gridcolor:'#dfe6e5',title:'KD'},
+    yaxis4:{domain:[0.18,0.29],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'MACD'},
+    yaxis5:{domain:[0,0.12],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'主力(張)'},
+    shapes:[{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:20,y1:20,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:80,y1:80,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y4',y0:0,y1:0,line:{color:'#9aa8a7',width:1}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y5',y0:0,y1:0,line:{color:'#778584',width:1}}],
+    annotations:[...partialBars.map(b=>({xref:'x',yref:'y',x:b.date,y:b.high,text:'盤中暫時 K',showarrow:true,arrowhead:2,ax:0,ay:-24,font:{color:'#9a4b1f',size:compact?9:11}})),...(mainForce.length?[]:[{xref:'paper',yref:'paper',x:0.5,y:0.055,text:data.main_force_status==='token_missing'?'主力資料未啟用（需 FinMind Sponsor Token）':'主力資料目前無法取得',showarrow:false,font:{color:'#7a8786',size:compact?9:11}}])],
     legend:{orientation:'h',y:1.08,font:{size:compact?9:11}},showlegend:true,barmode:'relative'},{responsive:true,displayModeBar:false,scrollZoom:false,doubleClick:false,staticPlot:compact});
 }
 function render() {
@@ -229,7 +233,7 @@ else {
   $('status').textContent=data.is_intraday
     ? `盤中暫定（截至 ${asOf}）${coverage} · 累積量達 ${volumeThresholdText()} 張 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · 13:30 收盤前條件仍可能改變。`
     : `成交量達標 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
-  if(data.is_intraday) $('analysis-note').textContent=`本頁為盤中暫定篩選結果；成交量門檻固定為累積 ${volumeThresholdText()} 張。圖表最右側「盤中暫時 K」與「盤中暫時量」使用證交所 MIS 的開、高、低、最新價及當下累積成交量，收盤前仍會變動；量 MA5／MA10 只計算完整日成交量。頭、底與轉折採 line-lab 的左右波段確認方式，可分別顯示或隱藏；暫時 K 尚未形成已確認轉折。支撐壓力與機率仍以最近完整收盤資料計算。`;
+  if(data.is_intraday) $('analysis-note').textContent=`本頁為盤中暫定篩選結果；成交量門檻固定為累積 ${volumeThresholdText()} 張。圖表最右側「盤中暫時 K」與「盤中暫時量」使用證交所 MIS 的開、高、低、最新價及當下累積成交量，收盤前仍會變動；量 MA5／MA10 只計算完整日成交量。主力買賣超曲線採 FinMind 每日前 15 大券商分點淨額，為盤後資料，盤中不會產生暫時主力點。頭、底與轉折採 line-lab 的左右波段確認方式，可分別顯示或隱藏；暫時 K 尚未形成已確認轉折。支撐壓力與機率仍以最近完整收盤資料計算。`;
   $('built').textContent=`網頁產生時間 ${new Date(data.built_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})}（台灣）`;
   for(const id of ['search','market','sort']) $(id).addEventListener(id==='search'?'input':'change',render);
   for(const view of ['confirmed','waiting']) $(view+'-tab').addEventListener('click',()=>{

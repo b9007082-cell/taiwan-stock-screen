@@ -8,7 +8,8 @@ from unittest.mock import Mock, patch
 import pandas as pd
 from src.tw_daily_update import DailyUpdater
 from src.tw_intraday_update import IntradayUpdater, fetch_twse_mis_snapshot
-from src.tw_official_data import parse_report, latest_reports, monthly_history, finmind_history
+from src.tw_official_data import (parse_report, latest_reports, monthly_history, finmind_history,
+                                  finmind_broker_concentration)
 from scripts.screen_tw_pullback import (signal, swing_structure, bullish_reasons,
                                         technical_indicators, above_ma20, classify_rising_stage,
                                         pullback_volume_contracted)
@@ -293,6 +294,27 @@ class OfficialDataTests(unittest.TestCase):
             self.assertEqual(frame.close.iloc[0], 2380)
             finmind_history("2330", date(2026, 4, 1), date(2026, 9, 14))
             get.assert_called_once()
+
+    def test_finmind_broker_concentration_uses_sponsor_token_and_lots_source(self):
+        payload = {"status": 200, "data": [{"date": "2026-09-14", "stock_id": "2330", "top_k": 15,
+                   "top_buy_volume": 2500000, "top_sell_volume": 1750000}]}
+        with tempfile.TemporaryDirectory() as tmp, patch("src.tw_official_data.CACHE", Path(tmp)), \
+                patch.dict("src.tw_official_data.os.environ", {"FINMIND_TOKEN": "secret"}, clear=False), \
+                patch("src.tw_official_data.requests.get") as get:
+            get.return_value.json.return_value = payload
+            frame = finmind_broker_concentration("2330", date(2026, 9, 1), date(2026, 9, 14))
+            self.assertEqual(frame.top_k.iloc[0], 15)
+            self.assertEqual(frame.top_buy_volume.iloc[0] - frame.top_sell_volume.iloc[0], 750000)
+            self.assertEqual(frame.attrs["status"], "available")
+            self.assertEqual(get.call_args.kwargs["headers"]["Authorization"], "Bearer secret")
+
+    def test_finmind_broker_concentration_is_optional_without_token(self):
+        with patch.dict("src.tw_official_data.os.environ", {}, clear=True), \
+                patch("src.tw_official_data.requests.get") as get:
+            frame = finmind_broker_concentration("2330", date(2026, 9, 1), date(2026, 9, 14))
+            self.assertTrue(frame.empty)
+            self.assertEqual(frame.attrs["status"], "token_missing")
+            get.assert_not_called()
 
 
 class IntradayUpdateTests(unittest.TestCase):

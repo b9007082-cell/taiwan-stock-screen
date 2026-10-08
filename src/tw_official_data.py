@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from pathlib import Path
+import os
 import time
 import threading
 
@@ -134,6 +135,49 @@ def finmind_history(code, start, end):
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(path, index=False)
     return df
+
+
+def finmind_broker_concentration(code, start, end):
+    """Return FinMind top-15 broker concentration without breaking page builds.
+
+    This Sponsor-only dataset is optional. Missing credentials or entitlement must
+    leave the rest of the official TWSE/TPEx page usable.
+    """
+    columns = ["date", "stock_id", "top_k", "top_buy_volume", "top_sell_volume"]
+    token = os.environ.get("FINMIND_TOKEN", "").strip()
+    if not token:
+        frame = pd.DataFrame(columns=columns)
+        frame.attrs["status"] = "token_missing"
+        return frame
+    path = CACHE / "finmind_broker_concentration" / f"{code}_{start}_{end}.parquet"
+    if path.exists():
+        frame = pd.read_parquet(path)
+        frame.attrs["status"] = "available"
+        return frame
+    try:
+        response = requests.get("https://api.finmindtrade.com/api/v4/data", params={
+            "dataset": "TaiwanStockBrokerDailyConcentration", "data_id": code,
+            "start_date": str(start), "end_date": str(end + timedelta(days=1)),
+        }, headers={"Authorization": f"Bearer {token}"}, timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("status") != 200:
+            raise ValueError("FinMind concentration request failed")
+        frame = pd.DataFrame(payload.get("data", [])).reindex(columns=columns)
+        if not frame.empty:
+            if not (frame.stock_id.astype(str) == code).all():
+                raise ValueError("FinMind 主力資料股票代碼不符")
+            for field in ("top_k", "top_buy_volume", "top_sell_volume"):
+                frame[field] = pd.to_numeric(frame[field], errors="coerce")
+            frame = frame.dropna(subset=["date", "top_buy_volume", "top_sell_volume"])
+            path.parent.mkdir(parents=True, exist_ok=True)
+            frame.to_parquet(path, index=False)
+        frame.attrs["status"] = "available"
+        return frame
+    except (requests.RequestException, ValueError, TypeError, KeyError):
+        frame = pd.DataFrame(columns=columns)
+        frame.attrs["status"] = "unavailable"
+        return frame
 
 
 def selected_history(start, end, symbols, progress=None):

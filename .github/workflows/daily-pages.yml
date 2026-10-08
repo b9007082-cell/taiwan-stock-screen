@@ -43,6 +43,8 @@ jobs:
           restore-keys: tw-market-v1-
       - name: Build noon intraday page
         if: github.event.schedule == '30 3 * * 1-5' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'intraday')
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: |
           for attempt in 1 2 3; do
             if python -u scripts/build_pages.py --mode intraday; then
@@ -58,6 +60,8 @@ jobs:
           done
       - name: Build completed daily page
         if: github.event.schedule != '30 3 * * 1-5' && !(github.event_name == 'workflow_dispatch' && inputs.mode == 'intraday')
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: |
           for attempt in 1 2 3; do
             if python -u scripts/build_pages.py --mode daily; then

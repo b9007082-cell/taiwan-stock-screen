@@ -16,6 +16,7 @@ from src.tw_daily_update import DailyUpdater
 from src.tw_intraday_update import IntradayUpdater
 from scripts.screen_tw_pullback import MIN_VOLUME_LOTS, SCREENING
 from src.pages_analysis import analyze_stock
+from src.tw_official_data import finmind_broker_concentration
 
 
 def build(snapshot, destination):
@@ -33,6 +34,7 @@ def build(snapshot, destination):
     downloads = destination / 'downloads'
     downloads.mkdir(exist_ok=True)
     candles = {}
+    main_force_statuses = []
     stocks = result['matches'] + result.get('waiting_matches', [])
     for stock in stocks:
         code = stock['code']
@@ -45,6 +47,16 @@ def build(snapshot, destination):
             stock['analysis'] = {'error': f'分析失敗（{type(exc).__name__}）', 'zones': []}
         frame['date'] = pd.to_datetime(frame.time, unit='s').dt.strftime('%Y-%m-%d')
         candles[code] = frame[['date', 'open', 'high', 'low', 'close', 'tick_volume']].to_dict('records')
+        concentration = finmind_broker_concentration(
+            code, pd.to_datetime(frame.date.iloc[0]).date(), pd.to_datetime(frame.date.iloc[-1]).date())
+        main_force_statuses.append(concentration.attrs.get('status', 'unavailable'))
+        stock['main_force'] = [
+            {'date': str(row.date), 'top_k': int(row.top_k),
+             'buy_lots': round(float(row.top_buy_volume) / 1000, 3),
+             'sell_lots': round(float(row.top_sell_volume) / 1000, 3),
+             'net_lots': round((float(row.top_buy_volume) - float(row.top_sell_volume)) / 1000, 3)}
+            for row in concentration.itertuples(index=False)
+        ]
         intraday_bar = stock.get('intraday_bar') if result.get('is_intraday') else None
         if intraday_bar:
             candles[code].append({
@@ -74,7 +86,10 @@ def build(snapshot, destination):
             bundle.write(downloads / name, name)
     for name in ('tw_stock_symbols.csv', 'fetch_errors.csv'):
         shutil.copy2(snapshot / name, downloads / name)
+    main_force_status = ('available' if any(s == 'available' for s in main_force_statuses)
+                         else (main_force_statuses[0] if main_force_statuses else 'token_missing'))
     payload = {**result, 'source': source, 'candles': candles,
+               'main_force_status': main_force_status,
                'built_at': datetime.now(timezone.utc).isoformat()}
     # JSON lives in a separate script, so file:// previews need no fetch/server.
     encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False).replace('<', '\\u003c')
