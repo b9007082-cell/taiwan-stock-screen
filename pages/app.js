@@ -197,7 +197,7 @@ function show(stock) {
     yaxis6:{overlaying:'y5',fixedrange:true,autorange:true,visible:false,showgrid:false,zeroline:false},
     shapes:[{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:20,y1:20,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:80,y1:80,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y4',y0:0,y1:0,line:{color:'#9aa8a7',width:1}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y5',y0:0,y1:0,line:{color:'#778584',width:1}}],
     annotations:[...partialBars.map(b=>({xref:'x',yref:'y',x:b.date,y:b.high,text:'盤中暫時 K',showarrow:true,arrowhead:2,ax:0,ay:-24,font:{color:'#9a4b1f',size:compact?9:11}})),...(institutional.length?[]:[{xref:'paper',yref:'paper',x:0.5,y:0.055,text:'三大法人資料目前無法取得',showarrow:false,font:{color:'#7a8786',size:compact?9:11}}])],
-    legend:{orientation:'h',y:1.08,font:{size:compact?9:11}},showlegend:true,barmode:'relative'},{responsive:true,displayModeBar:false,scrollZoom:false,doubleClick:false,staticPlot:compact});
+    legend:{orientation:'h',y:1.08,font:{size:compact?9:11}},showlegend:!compact,barmode:'relative'},{responsive:true,displayModeBar:false,scrollZoom:false,doubleClick:false,staticPlot:compact});
 }
 function render() {
   const query=$('search').value.trim().toLowerCase(), market=$('market').value, sort=$('sort').value;

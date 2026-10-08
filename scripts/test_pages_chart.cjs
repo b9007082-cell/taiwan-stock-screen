@@ -72,6 +72,7 @@ function checkChart(mobile, partial=false) {
   assert.ok(layout.yaxis2.domain[0] > layout.yaxis3.domain[1]);
   assert.ok(layout.yaxis4.domain[0] > layout.yaxis5.domain[1]);
   assert.equal(layout.font.size,mobile?10:12);
+  assert.equal(layout.showlegend,!mobile);
   assert.equal(get('zoom-out').disabled,true);
   context.zoomChart('in');
   assert.equal(range[1]-range[0],80);
