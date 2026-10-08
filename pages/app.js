@@ -160,6 +160,8 @@ function show(stock) {
   const average=n=>bars.map((b,i)=>i<n-1?null:bars.slice(i-n+1,i+1).reduce((sum,v)=>sum+v.close,0)/n);
   const volumes=bars.map(b=>b.is_partial||b.tick_volume==null?null:b.tick_volume/1000);
   const partialVolumeBars=bars.filter(b=>b.is_partial&&b.tick_volume!=null);
+  const completedCloseByDate=new Map(completedBars.map(b=>[b.date,b.close]));
+  const institutionalPrices=institutional.map(item=>completedCloseByDate.get(item.date) ?? null);
   const volumeAverage=n=>volumes.map((value,i)=>{
     if(value==null||i<n-1) return null;
     const window=volumes.slice(i-n+1,i+1);
@@ -181,14 +183,18 @@ function show(stock) {
     {type:'bar',x:dates,y:indicators.histogram,name:'MACD柱',yaxis:'y4',marker:{color:indicators.histogram.map(v=>v>0?'#c84750':'#25836b')}},
     {type:'scatter',mode:'lines',x:dates,y:indicators.dif,name:'DIF(6,13)',yaxis:'y4',line:{color:'#ba851a',width:1.3}},
     {type:'scatter',mode:'lines',x:dates,y:indicators.signal,name:'Signal(9)',yaxis:'y4',line:{color:'#537abc',width:1.3}},
-    ...(institutional.length?[{type:'scatter',mode:'lines+markers',x:institutional.map(item=>item.date),y:institutional.map(item=>item.net_lots),customdata:institutional.map(item=>[item.foreign_lots,item.trust_lots,item.dealer_lots]),name:'三大法人買賣超',yaxis:'y5',line:{color:'#68578f',width:2,shape:'spline',smoothing:0.6},marker:{size:5,color:institutional.map(item=>item.net_lots>=0?'#c84750':'#25836b')},hovertemplate:'%{x}<br>合計 %{y:,.0f} 張<br>外資 %{customdata[0]:,.0f} 張<br>投信 %{customdata[1]:,.0f} 張<br>自營商 %{customdata[2]:,.0f} 張<extra></extra>'}]:[])
-  ],{margin:compact?{t:44,l:46,r:8,b:34}:{t:34,l:50,r:12,b:38},paper_bgcolor:'#f5f7f7',plot_bgcolor:'#f5f7f7',font:{family:'system-ui',color:'#526363',size:compact?10:12},dragmode:false,
+    ...(institutional.length?[
+      {type:'bar',x:institutional.map(item=>item.date),y:institutional.map(item=>item.net_lots),customdata:institutional.map(item=>[item.foreign_lots,item.trust_lots,item.dealer_lots]),name:'三大法人買賣超',yaxis:'y5',marker:{color:institutional.map(item=>item.net_lots>=0?'#ef3340':'#24a957')},hovertemplate:'%{x}<br>合計 %{y:,.0f} 張<br>外資 %{customdata[0]:,.0f} 張<br>投信 %{customdata[1]:,.0f} 張<br>自營商 %{customdata[2]:,.0f} 張<extra></extra>'},
+      {type:'scatter',mode:'lines',x:institutional.map(item=>item.date),y:institutionalPrices,name:'股價',yaxis:'y6',connectgaps:false,line:{color:'#7b8585',width:1.8},hovertemplate:'%{x}<br>股價 %{y:,.2f} 元<extra></extra>'}
+    ]:[])
+  ],{margin:compact?{t:44,l:46,r:40,b:34}:{t:34,l:50,r:52,b:38},paper_bgcolor:'#f5f7f7',plot_bgcolor:'#f5f7f7',font:{family:'system-ui',color:'#526363',size:compact?10:12},dragmode:false,
     xaxis:{type:'category',nticks:5,rangeslider:{visible:false},fixedrange:true,autorange:true,anchor:'y5'},
     yaxis:{domain:[0.62,1],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'價格'},
     yaxis2:{domain:[0.50,0.58],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'量(張)'},
     yaxis3:{domain:[0.34,0.45],fixedrange:true,range:[0,100],gridcolor:'#dfe6e5',title:'KD'},
     yaxis4:{domain:[0.18,0.29],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'MACD'},
     yaxis5:{domain:[0,0.12],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'法人(張)'},
+    yaxis6:{overlaying:'y5',side:'right',fixedrange:true,autorange:true,showgrid:false,title:'元'},
     shapes:[{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:20,y1:20,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:80,y1:80,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y4',y0:0,y1:0,line:{color:'#9aa8a7',width:1}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y5',y0:0,y1:0,line:{color:'#778584',width:1}}],
     annotations:[...partialBars.map(b=>({xref:'x',yref:'y',x:b.date,y:b.high,text:'盤中暫時 K',showarrow:true,arrowhead:2,ax:0,ay:-24,font:{color:'#9a4b1f',size:compact?9:11}})),...(institutional.length?[]:[{xref:'paper',yref:'paper',x:0.5,y:0.055,text:'三大法人資料目前無法取得',showarrow:false,font:{color:'#7a8786',size:compact?9:11}}])],
     legend:{orientation:'h',y:1.08,font:{size:compact?9:11}},showlegend:true,barmode:'relative'},{responsive:true,displayModeBar:false,scrollZoom:false,doubleClick:false,staticPlot:compact});
@@ -233,7 +239,7 @@ else {
   $('status').textContent=data.is_intraday
     ? `盤中暫定（截至 ${asOf}）${coverage} · 累積量達 ${volumeThresholdText()} 張 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · 13:30 收盤前條件仍可能改變。`
     : `成交量達標 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
-  if(data.is_intraday) $('analysis-note').textContent=`本頁為盤中暫定篩選結果；成交量門檻固定為累積 ${volumeThresholdText()} 張。圖表最右側「盤中暫時 K」與「盤中暫時量」使用證交所 MIS 的開、高、低、最新價及當下累積成交量，收盤前仍會變動；量 MA5／MA10 只計算完整日成交量。三大法人買賣超曲線採證交所／櫃買中心盤後資料，合計外資、投信與自營商，盤中不會產生暫時法人點。頭、底與轉折採 line-lab 的左右波段確認方式，可分別顯示或隱藏；暫時 K 尚未形成已確認轉折。支撐壓力與機率仍以最近完整收盤資料計算。`;
+  if(data.is_intraday) $('analysis-note').textContent=`本頁為盤中暫定篩選結果；成交量門檻固定為累積 ${volumeThresholdText()} 張。圖表最右側「盤中暫時 K」與「盤中暫時量」使用證交所 MIS 的開、高、低、最新價及當下累積成交量，收盤前仍會變動；量 MA5／MA10 只計算完整日成交量。三大法人買賣超採證交所／櫃買中心盤後資料，買超為紅柱、賣超為綠柱，灰線為同日股價；盤中不會產生暫時法人柱。頭、底與轉折採 line-lab 的左右波段確認方式，可分別顯示或隱藏；暫時 K 尚未形成已確認轉折。支撐壓力與機率仍以最近完整收盤資料計算。`;
   $('built').textContent=`網頁產生時間 ${new Date(data.built_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})}（台灣）`;
   for(const id of ['search','market','sort']) $(id).addEventListener(id==='search'?'input':'change',render);
   for(const view of ['confirmed','waiting']) $(view+'-tab').addEventListener('click',()=>{

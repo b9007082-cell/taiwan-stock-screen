@@ -40,7 +40,7 @@ function checkChart(mobile, partial=false) {
   assert.equal(config.doubleClick,false);
   assert.equal(layout.dragmode,false);
   assert.equal(layout.xaxis.fixedrange,true);
-  assert.equal(chartTraces.length,partial?19:17);
+  assert.equal(chartTraces.length,partial?20:18);
   assert.equal(chartTraces.find(trace=>trace.name==='完整日 K').x.length,partial?99:100);
   assert.equal(Boolean(chartTraces.find(trace=>trace.name==='盤中暫時 K')),partial);
   assert.equal(Boolean(chartTraces.find(trace=>trace.name==='盤中暫時量')),partial);
@@ -60,7 +60,12 @@ function checkChart(mobile, partial=false) {
   assert.equal(chartTraces.find(trace=>trace.name==='MACD柱').yaxis,'y4');
   assert.equal(chartTraces.find(trace=>trace.name==='三大法人買賣超').yaxis,'y5');
   assert.deepEqual(Array.from(chartTraces.find(trace=>trace.name==='三大法人買賣超').y),[400,-300,600]);
-  assert.equal(chartTraces.find(trace=>trace.name==='三大法人買賣超').line.shape,'spline');
+  assert.equal(chartTraces.find(trace=>trace.name==='三大法人買賣超').type,'bar');
+  assert.deepEqual(Array.from(chartTraces.find(trace=>trace.name==='三大法人買賣超').marker.color),['#ef3340','#24a957','#ef3340']);
+  assert.equal(chartTraces.find(trace=>trace.name==='股價').yaxis,'y6');
+  assert.deepEqual(Array.from(chartTraces.find(trace=>trace.name==='股價').y),partial?[11,11,null]:[11,11,11]);
+  assert.equal(layout.yaxis6.overlaying,'y5');
+  assert.equal(layout.yaxis6.side,'right');
   assert.equal(layout.yaxis3.range[1],100);
   assert.ok(layout.yaxis2.domain[0] > layout.yaxis3.domain[1]);
   assert.ok(layout.yaxis4.domain[0] > layout.yaxis5.domain[1]);
