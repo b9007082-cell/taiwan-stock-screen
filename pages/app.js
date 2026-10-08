@@ -195,18 +195,23 @@ function show(stock) {
     yaxis4:{domain:[0.18,0.29],fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'MACD'},
     yaxis5:{domain:[0,0.12],side:'right',fixedrange:true,autorange:true,gridcolor:'#dfe6e5',title:'法人(張)'},
     yaxis6:{overlaying:'y5',fixedrange:true,autorange:true,visible:false,showgrid:false,zeroline:false},
-    shapes:[{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:20,y1:20,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:80,y1:80,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y4',y0:0,y1:0,line:{color:'#9aa8a7',width:1}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y5',y0:0,y1:0,line:{color:'#778584',width:1}},{type:'line',xref:'x',x0:dates.at(-1),x1:dates.at(-1),yref:'paper',y0:0,y1:1,visible:false,layer:'above',line:{color:'#344746',width:1.2,dash:'dash'}}],
+    shapes:[{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:20,y1:20,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y3',y0:80,y1:80,line:{color:'#9aa8a7',width:1,dash:'dot'}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y4',y0:0,y1:0,line:{color:'#9aa8a7',width:1}},{type:'line',xref:'paper',x0:0,x1:1,yref:'y5',y0:0,y1:0,line:{color:'#778584',width:1}},{type:'line',xref:'x',x0:dates.at(-1),x1:dates.at(-1),yref:'paper',y0:0,y1:1,visible:false,layer:'above',line:{color:'#e06b32',width:2,dash:'dash'}}],
     annotations:[...partialBars.map(b=>({xref:'x',yref:'y',x:b.date,y:b.high,text:'盤中暫時 K',showarrow:true,arrowhead:2,ax:0,ay:-24,font:{color:'#9a4b1f',size:compact?9:11}})),...(institutional.length?[]:[{xref:'paper',yref:'paper',x:0.5,y:0.055,text:'三大法人資料目前無法取得',showarrow:false,font:{color:'#7a8786',size:compact?9:11}}])],
     legend:{orientation:'h',y:1.08,font:{size:compact?9:11}},showlegend:!compact,barmode:'relative'},{responsive:true,displayModeBar:false,scrollZoom:false,doubleClick:false,staticPlot:false});
   const chartElement=$('chart');
   const bindCandleSelection=()=>{
-    if(typeof chartElement.removeAllListeners==='function') chartElement.removeAllListeners('plotly_click');
+    if(typeof chartElement.removeAllListeners==='function') {
+      chartElement.removeAllListeners('plotly_click');
+      chartElement.removeAllListeners('plotly_hover');
+    }
     if(typeof chartElement.on!=='function') return;
-    chartElement.on('plotly_click',event=>{
-      const point=event?.points?.find(item=>item.data?.type==='candlestick');
+    const selectDate=event=>{
+      const point=event?.points?.find(item=>item.x!=null);
       if(!point) return;
       Plotly.relayout(chartElement,{'shapes[4].visible':true,'shapes[4].x0':point.x,'shapes[4].x1':point.x});
-    });
+    };
+    chartElement.on('plotly_click',selectDate);
+    if(compact) chartElement.on('plotly_hover',selectDate);
   };
   if(rendered&&typeof rendered.then==='function') rendered.then(bindCandleSelection); else bindCandleSelection();
 }

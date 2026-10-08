@@ -77,10 +77,15 @@ function checkChart(mobile, partial=false) {
   assert.equal(layout.shapes.length,5);
   assert.equal(layout.shapes[4].visible,false);
   assert.equal(typeof get('chart').handlers.plotly_click,'function');
-  get('chart').handlers.plotly_click({points:[{x:'42',data:{type:'candlestick'}}]});
+  get('chart').handlers.plotly_click({points:[{x:'42',data:{type:'scatter'}}]});
   assert.equal(lastRelayout['shapes[4].visible'],true);
   assert.equal(lastRelayout['shapes[4].x0'],'42');
   assert.equal(lastRelayout['shapes[4].x1'],'42');
+  assert.equal(typeof get('chart').handlers.plotly_hover,mobile?'function':'undefined');
+  if(mobile) {
+    get('chart').handlers.plotly_hover({points:[{x:'43',data:{type:'scatter'}}]});
+    assert.equal(lastRelayout['shapes[4].x0'],'43');
+  }
   assert.equal(get('zoom-out').disabled,true);
   context.zoomChart('in');
   assert.equal(range[1]-range[0],80);
