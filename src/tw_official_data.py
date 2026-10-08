@@ -3,7 +3,6 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from pathlib import Path
-import os
 import time
 import threading
 
@@ -137,47 +136,85 @@ def finmind_history(code, start, end):
     return df
 
 
-def finmind_broker_concentration(code, start, end):
-    """Return FinMind top-15 broker concentration without breaking page builds.
+INSTITUTIONAL_COLUMNS = ["date", "code", "market", "foreign_net", "trust_net", "dealer_net", "total_net"]
 
-    This Sponsor-only dataset is optional. Missing credentials or entitlement must
-    leave the rest of the official TWSE/TPEx page usable.
-    """
-    columns = ["date", "stock_id", "top_k", "top_buy_volume", "top_sell_volume"]
-    token = os.environ.get("FINMIND_TOKEN", "").strip()
-    if not token:
-        frame = pd.DataFrame(columns=columns)
-        frame.attrs["status"] = "token_missing"
-        return frame
-    path = CACHE / "finmind_broker_concentration" / f"{code}_{start}_{end}.parquet"
+
+def _number(value):
+    return pd.to_numeric(str(value).replace(",", ""), errors="coerce")
+
+
+def institutional_daily_report(market, day):
+    """Fetch one official TWSE/TPEx three-institution report (values in shares)."""
+    path = CACHE / "institutional" / market / f"{day:%Y%m%d}.parquet"
     if path.exists():
-        frame = pd.read_parquet(path)
-        frame.attrs["status"] = "available"
-        return frame
-    try:
-        response = requests.get("https://api.finmindtrade.com/api/v4/data", params={
-            "dataset": "TaiwanStockBrokerDailyConcentration", "data_id": code,
-            "start_date": str(start), "end_date": str(end + timedelta(days=1)),
-        }, headers={"Authorization": f"Bearer {token}"}, timeout=30)
+        return pd.read_parquet(path)
+    if market == "listed":
+        response = requests.get("https://www.twse.com.tw/rwd/zh/fund/T86", params={
+            "response": "json", "date": day.strftime("%Y%m%d"), "selectType": "ALLBUT0999",
+        }, timeout=30)
         response.raise_for_status()
         payload = response.json()
-        if payload.get("status") != 200:
-            raise ValueError("FinMind concentration request failed")
-        frame = pd.DataFrame(payload.get("data", [])).reindex(columns=columns)
-        if not frame.empty:
-            if not (frame.stock_id.astype(str) == code).all():
-                raise ValueError("FinMind 主力資料股票代碼不符")
-            for field in ("top_k", "top_buy_volume", "top_sell_volume"):
-                frame[field] = pd.to_numeric(frame[field], errors="coerce")
-            frame = frame.dropna(subset=["date", "top_buy_volume", "top_sell_volume"])
-            path.parent.mkdir(parents=True, exist_ok=True)
-            frame.to_parquet(path, index=False)
-        frame.attrs["status"] = "available"
-        return frame
-    except (requests.RequestException, ValueError, TypeError, KeyError):
-        frame = pd.DataFrame(columns=columns)
-        frame.attrs["status"] = "unavailable"
-        return frame
+        if payload.get("date") != day.strftime("%Y%m%d"):
+            return pd.DataFrame(columns=INSTITUTIONAL_COLUMNS)
+        fields = payload.get("fields", [])
+        required = ["證券代號", "外陸資買賣超股數(不含外資自營商)", "投信買賣超股數",
+                    "自營商買賣超股數", "三大法人買賣超股數"]
+        if not set(required).issubset(fields):
+            raise ValueError("TWSE 三大法人欄位已變更")
+        indexes = [fields.index(name) for name in required]
+        rows = [[day, row[indexes[0]], market, *[_number(row[i]) for i in indexes[1:]]]
+                for row in payload.get("data", [])]
+    elif market == "otc":
+        roc = f"{day.year - 1911:03d}/{day.month:02d}/{day.day:02d}"
+        response = requests.get("https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade", params={
+            "type": "Daily", "sect": "EW", "date": roc, "id": "", "response": "json",
+        }, timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+        table = next((t for t in payload.get("tables", []) if t.get("title") == "三大法人買賣明細資訊"), None)
+        if not table or table.get("date") != roc:
+            return pd.DataFrame(columns=INSTITUTIONAL_COLUMNS)
+        rows = [[day, row[0], market, _number(row[10]), _number(row[13]),
+                 _number(row[22]), _number(row[23])]
+                for row in table.get("data", []) if len(row) >= 24]
+    else:
+        raise ValueError(f"Unknown market: {market}")
+    frame = pd.DataFrame(rows, columns=INSTITUTIONAL_COLUMNS)
+    frame["code"] = frame.code.astype(str).str.strip().str.strip('="')
+    frame = frame[frame.code.str.fullmatch(r"[1-9][0-9]{3}")].dropna(subset=INSTITUTIONAL_COLUMNS[3:])
+    totals = frame.foreign_net + frame.trust_net + frame.dealer_net
+    frame = frame[(totals - frame.total_net).abs() < 0.5]
+    if not frame.empty:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp = path.with_suffix(".tmp")
+        frame.to_parquet(temp, index=False)
+        temp.replace(path)
+    return frame
+
+
+def institutional_history(symbols, days):
+    """Return official daily institutional flows for selected symbols, fail-open."""
+    symbol_markets = {(str(row["code"]), row.get("market", "listed")) for row in symbols}
+    markets = sorted({market for _, market in symbol_markets})
+    jobs = [(market, day) for day in sorted(set(days)) for market in markets]
+    frames, failed = [], False
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = {pool.submit(institutional_daily_report, *job): job for job in jobs}
+        for future in as_completed(futures):
+            try:
+                frame = future.result()
+                if not frame.empty:
+                    frames.append(frame)
+            except (requests.RequestException, ValueError, TypeError, KeyError):
+                failed = True
+    if frames:
+        result = pd.concat(frames, ignore_index=True)
+        result = result[result.apply(lambda row: (row.code, row.market) in symbol_markets, axis=1)]
+        result = result.sort_values(["code", "date"])
+    else:
+        result = pd.DataFrame(columns=INSTITUTIONAL_COLUMNS)
+    result.attrs["status"] = "partial" if failed and not result.empty else ("unavailable" if failed else "available")
+    return result
 
 
 def selected_history(start, end, symbols, progress=None):

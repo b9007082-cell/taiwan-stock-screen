@@ -88,15 +88,16 @@ class PagesTests(unittest.TestCase):
             pd.DataFrame([{'time': 1790208000, 'open': 46.3, 'high': 47.45,
                            'low': 46.05, 'close': 47.1, 'tick_volume': 4013030}]).to_parquet(path / '2338_D1.parquet')
             (path / '2338_D1.csv').write_text('date,close\n2026-09-24,47.1', encoding='utf-8')
-            concentration = pd.DataFrame([{'date': '2026-09-24', 'stock_id': '2338', 'top_k': 15,
-                                           'top_buy_volume': 2500000, 'top_sell_volume': 1750000}])
-            concentration.attrs['status'] = 'available'
-            with patch('scripts.build_pages.finmind_broker_concentration', return_value=concentration):
+            flows = pd.DataFrame([{'date': pd.Timestamp('2026-09-24').date(), 'code': '2338',
+                                   'market': 'listed', 'foreign_net': 500000, 'trust_net': 150000,
+                                   'dealer_net': 100000, 'total_net': 750000}])
+            flows.attrs['status'] = 'available'
+            with patch('scripts.build_pages.institutional_history', return_value=flows):
                 build(path, path / 'site')
             text = (path / 'site/data.js').read_text(encoding='utf-8')
             self.assertNotIn('</script>', text)
             self.assertIn('2026-09-24', text)
-            self.assertIn('"main_force_status": "available"', text)
+            self.assertIn('"institutional_status": "available"', text)
             self.assertIn('"net_lots": 750.0', text)
             self.assertTrue((path / 'site/downloads/2338_D1.csv').exists())
             analysis = json.loads((path / 'site/downloads/analysis.json').read_text(encoding='utf-8'))

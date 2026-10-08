@@ -9,7 +9,7 @@ import pandas as pd
 from src.tw_daily_update import DailyUpdater
 from src.tw_intraday_update import IntradayUpdater, fetch_twse_mis_snapshot
 from src.tw_official_data import (parse_report, latest_reports, monthly_history, finmind_history,
-                                  finmind_broker_concentration)
+                                  institutional_daily_report, institutional_history)
 from scripts.screen_tw_pullback import (signal, swing_structure, bullish_reasons,
                                         technical_indicators, above_ma20, classify_rising_stage,
                                         pullback_volume_contracted)
@@ -295,26 +295,39 @@ class OfficialDataTests(unittest.TestCase):
             finmind_history("2330", date(2026, 4, 1), date(2026, 9, 14))
             get.assert_called_once()
 
-    def test_finmind_broker_concentration_uses_sponsor_token_and_lots_source(self):
-        payload = {"status": 200, "data": [{"date": "2026-09-14", "stock_id": "2330", "top_k": 15,
-                   "top_buy_volume": 2500000, "top_sell_volume": 1750000}]}
+    def test_twse_institutional_report_parses_and_validates_total(self):
+        fields = ["證券代號", "外陸資買賣超股數(不含外資自營商)", "投信買賣超股數",
+                  "自營商買賣超股數", "三大法人買賣超股數"]
+        payload = {"date": "20260914", "fields": fields,
+                   "data": [["2330", "500,000", "150,000", "100,000", "750,000"]]}
         with tempfile.TemporaryDirectory() as tmp, patch("src.tw_official_data.CACHE", Path(tmp)), \
-                patch.dict("src.tw_official_data.os.environ", {"FINMIND_TOKEN": "secret"}, clear=False), \
                 patch("src.tw_official_data.requests.get") as get:
             get.return_value.json.return_value = payload
-            frame = finmind_broker_concentration("2330", date(2026, 9, 1), date(2026, 9, 14))
-            self.assertEqual(frame.top_k.iloc[0], 15)
-            self.assertEqual(frame.top_buy_volume.iloc[0] - frame.top_sell_volume.iloc[0], 750000)
-            self.assertEqual(frame.attrs["status"], "available")
-            self.assertEqual(get.call_args.kwargs["headers"]["Authorization"], "Bearer secret")
+            frame = institutional_daily_report("listed", date(2026, 9, 14))
+            self.assertEqual(frame.total_net.iloc[0], 750000)
+            self.assertEqual(frame.foreign_net.iloc[0], 500000)
+            self.assertEqual(get.call_args.kwargs["params"]["selectType"], "ALLBUT0999")
 
-    def test_finmind_broker_concentration_is_optional_without_token(self):
-        with patch.dict("src.tw_official_data.os.environ", {}, clear=True), \
+    def test_tpex_institutional_report_uses_official_total(self):
+        row = ["8069", "元太"] + ["0"] * 22
+        row[10], row[13], row[22], row[23] = "-1,000", "200", "300", "-500"
+        payload = {"tables": [{"title": "三大法人買賣明細資訊", "date": "115/09/14",
+                               "data": [row]}]}
+        with tempfile.TemporaryDirectory() as tmp, patch("src.tw_official_data.CACHE", Path(tmp)), \
                 patch("src.tw_official_data.requests.get") as get:
-            frame = finmind_broker_concentration("2330", date(2026, 9, 1), date(2026, 9, 14))
-            self.assertTrue(frame.empty)
-            self.assertEqual(frame.attrs["status"], "token_missing")
-            get.assert_not_called()
+            get.return_value.json.return_value = payload
+            frame = institutional_daily_report("otc", date(2026, 9, 14))
+            self.assertEqual(frame.total_net.iloc[0], -500)
+            self.assertEqual(get.call_args.kwargs["params"]["type"], "Daily")
+
+    def test_institutional_history_fails_open(self):
+        good = pd.DataFrame([[date(2026, 9, 14), "2330", "listed", 1, 2, 3, 6]],
+                            columns=["date", "code", "market", "foreign_net", "trust_net", "dealer_net", "total_net"])
+        with patch("src.tw_official_data.institutional_daily_report", side_effect=[good, ValueError("offline")]):
+            frame = institutional_history([{"code": "2330", "market": "listed"},
+                                           {"code": "8069", "market": "otc"}], [date(2026, 9, 14)])
+        self.assertEqual(frame.attrs["status"], "partial")
+        self.assertEqual(frame.code.tolist(), ["2330"])
 
 
 class IntradayUpdateTests(unittest.TestCase):

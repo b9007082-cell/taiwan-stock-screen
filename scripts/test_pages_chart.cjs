@@ -21,10 +21,10 @@ function checkChart(mobile, partial=false) {
   get('sort').value = 'code';
   const bars = Array.from({length:100}, (_,i) => ({date:String(i),open:10,high:12,low:9,close:11,tick_volume:2000000+i*1000}));
   if(partial) Object.assign(bars[bars.length-1], {open:11,high:13,low:10,close:12,tick_volume:2500000,is_partial:true});
-  const stock = {code:'TEST',name:'Test',ma:{},bullish_reasons:[],close_position:0.5,main_force:[
-    {date:'97',buy_lots:1200,sell_lots:800,net_lots:400},
-    {date:'98',buy_lots:700,sell_lots:1000,net_lots:-300},
-    {date:'99',buy_lots:1500,sell_lots:900,net_lots:600}
+  const stock = {code:'TEST',name:'Test',ma:{},bullish_reasons:[],close_position:0.5,institutional_flows:[
+    {date:'97',foreign_lots:300,trust_lots:50,dealer_lots:50,net_lots:400},
+    {date:'98',foreign_lots:-250,trust_lots:20,dealer_lots:-70,net_lots:-300},
+    {date:'99',foreign_lots:500,trust_lots:50,dealer_lots:50,net_lots:600}
   ]};
   let layout, config, range, chartTraces;
   let resizeCount=0;
@@ -58,9 +58,9 @@ function checkChart(mobile, partial=false) {
   assert.ok(chartTraces.findIndex(trace=>trace.name==='成交量') < chartTraces.findIndex(trace=>trace.name==='K(5,3)'));
   assert.equal(chartTraces.find(trace=>trace.name==='K(5,3)').yaxis,'y3');
   assert.equal(chartTraces.find(trace=>trace.name==='MACD柱').yaxis,'y4');
-  assert.equal(chartTraces.find(trace=>trace.name==='主力買賣超').yaxis,'y5');
-  assert.deepEqual(Array.from(chartTraces.find(trace=>trace.name==='主力買賣超').y),[400,-300,600]);
-  assert.equal(chartTraces.find(trace=>trace.name==='主力買賣超').line.shape,'spline');
+  assert.equal(chartTraces.find(trace=>trace.name==='三大法人買賣超').yaxis,'y5');
+  assert.deepEqual(Array.from(chartTraces.find(trace=>trace.name==='三大法人買賣超').y),[400,-300,600]);
+  assert.equal(chartTraces.find(trace=>trace.name==='三大法人買賣超').line.shape,'spline');
   assert.equal(layout.yaxis3.range[1],100);
   assert.ok(layout.yaxis2.domain[0] > layout.yaxis3.domain[1]);
   assert.ok(layout.yaxis4.domain[0] > layout.yaxis5.domain[1]);
