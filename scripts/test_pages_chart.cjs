@@ -7,13 +7,14 @@ const vm = require('node:vm');
 function checkChart(mobile, partial=false) {
   function element() {
     const classes = new Set();
-    return {children:[], value:'', attributes:{}, classList:{toggle(name,force){
+    return {children:[], value:'', attributes:{}, handlers:{}, classList:{toggle(name,force){
         const add = force === undefined ? !classes.has(name) : force;
         if(add) classes.add(name); else classes.delete(name);
         return add;
       }, contains(name){return classes.has(name);}},
       append(...items){this.children.push(...items);}, replaceChildren(){this.children=[];},
-      addEventListener(){}, setAttribute(name,value){this.attributes[name]=String(value);}};
+      addEventListener(){}, on(name,handler){this.handlers[name]=handler;}, removeAllListeners(name){delete this.handlers[name];},
+      setAttribute(name,value){this.attributes[name]=String(value);}};
   }
   const nodes = new Map();
   const get = id => { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); };
@@ -26,16 +27,16 @@ function checkChart(mobile, partial=false) {
     {date:'98',foreign_lots:-250,trust_lots:20,dealer_lots:-70,net_lots:-300},
     {date:'99',foreign_lots:500,trust_lots:50,dealer_lots:50,net_lots:600}
   ]};
-  let layout, config, range, chartTraces;
+  let layout, config, range, chartTraces, lastRelayout;
   let resizeCount=0;
   const Plotly = {purge(){}, Plots:{resize(){resizeCount++;}}, react(id,traces,l,c){chartTraces=traces;layout=l;config=c;},
-    relayout(id,values){range=values['xaxis.range'];}};
+    relayout(id,values){lastRelayout=values;if(Object.hasOwn(values,'xaxis.range')) range=values['xaxis.range'];}};
   const context = vm.createContext({document:{body,getElementById:get,createElement:element}, Plotly,
     window:{STOCK_DATA:{matches:[],candles:{TEST:bars},date:'2026-09-29',built_at:'2026-09-29',min_volume_lots:1500},
       Plotly,addEventListener(){},matchMedia(){return {matches:mobile,addEventListener(){}};}}});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../pages/app.js'),'utf8'), context);
   context.show(stock);
-  assert.equal(config.staticPlot, mobile);
+  assert.equal(config.staticPlot, false);
   assert.equal(config.scrollZoom,false);
   assert.equal(config.doubleClick,false);
   assert.equal(layout.dragmode,false);
@@ -73,6 +74,13 @@ function checkChart(mobile, partial=false) {
   assert.ok(layout.yaxis4.domain[0] > layout.yaxis5.domain[1]);
   assert.equal(layout.font.size,mobile?10:12);
   assert.equal(layout.showlegend,!mobile);
+  assert.equal(layout.shapes.length,5);
+  assert.equal(layout.shapes[4].visible,false);
+  assert.equal(typeof get('chart').handlers.plotly_click,'function');
+  get('chart').handlers.plotly_click({points:[{x:'42',data:{type:'candlestick'}}]});
+  assert.equal(lastRelayout['shapes[4].visible'],true);
+  assert.equal(lastRelayout['shapes[4].x0'],'42');
+  assert.equal(lastRelayout['shapes[4].x1'],'42');
   assert.equal(get('zoom-out').disabled,true);
   context.zoomChart('in');
   assert.equal(range[1]-range[0],80);
