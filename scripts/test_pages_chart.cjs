@@ -62,10 +62,12 @@ function checkChart(mobile, partial=false) {
   assert.deepEqual(Array.from(chartTraces.find(trace=>trace.name==='三大法人買賣超').y),[400,-300,600]);
   assert.equal(chartTraces.find(trace=>trace.name==='三大法人買賣超').type,'bar');
   assert.deepEqual(Array.from(chartTraces.find(trace=>trace.name==='三大法人買賣超').marker.color),['#ef3340','#24a957','#ef3340']);
-  assert.equal(chartTraces.find(trace=>trace.name==='三大法人累計').yaxis,'y5');
+  assert.equal(chartTraces.find(trace=>trace.name==='三大法人累計').yaxis,'y6');
   assert.deepEqual(Array.from(chartTraces.find(trace=>trace.name==='三大法人累計').y),[400,100,700]);
   assert.equal(chartTraces.find(trace=>trace.name==='三大法人累計').line.color,'#52df73');
   assert.equal(layout.yaxis5.side,'right');
+  assert.equal(layout.yaxis6.overlaying,'y5');
+  assert.equal(layout.yaxis6.visible,false);
   assert.equal(layout.yaxis3.range[1],100);
   assert.ok(layout.yaxis2.domain[0] > layout.yaxis3.domain[1]);
   assert.ok(layout.yaxis4.domain[0] > layout.yaxis5.domain[1]);
