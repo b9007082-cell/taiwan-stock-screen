@@ -149,10 +149,11 @@ class IntradayUpdater:
         prior_day, _ = latest_reports(now.date() - timedelta(days=1))
         start = (pd.Timestamp(prior_day).replace(day=1) - pd.DateOffset(months=5)).date()
         history = selected_history(start, prior_day, liquid.to_dict("records")) if len(liquid) else pd.DataFrame()
+        history_errors = history.attrs.get("errors", [])
 
         folder = self.root / "data" / "tw_intraday" / now.strftime("%Y%m%d_%H%M%S_%f")
         folder.mkdir(parents=True)
-        matches, waiting_matches, selected, errors = [], [], [], []
+        matches, waiting_matches, selected, errors = [], [], [], list(history_errors)
         groups = history.groupby(["code", "market"]) if not history.empty else None
         current_time = int((pd.Timestamp(quote_day) - pd.Timestamp("1970-01-01")).total_seconds())
         self.update(stage=f"執行 {MIN_VOLUME_LOTS:,} 張盤中篩選", done=0)
@@ -162,7 +163,8 @@ class IntradayUpdater:
             try:
                 closed = groups.get_group((code, market)).drop(columns=["code", "name", "market"])
             except (KeyError, AttributeError):
-                errors.append({"code": code, "reason": "無法取得足夠的已收盤歷史資料"})
+                if not any(error["code"] == code for error in errors):
+                    errors.append({"code": code, "reason": "無法取得足夠的已收盤歷史資料"})
                 continue
             closed = closed.dropna().drop_duplicates("time").sort_values("time")
             live = pd.DataFrame([{

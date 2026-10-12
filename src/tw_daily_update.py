@@ -81,6 +81,7 @@ class DailyUpdater:
         selected, errors, matches, waiting_matches = [], [], [], []
         history = selected_history(start, target, liquid.to_dict("records"),
                                    lambda done, total: self.update(done=done, total=total)) if len(liquid) else liquid.copy()
+        errors.extend(history.attrs.get("errors", []))
         # The daily report supplies exact shares, replacing rounded monthly TPEx volume on the target day.
         history = pd.concat([history, liquid], ignore_index=True).drop_duplicates(["code", "market", "time"], keep="last")
         history = history[history.time <= int((pd.Timestamp(target) - pd.Timestamp("1970-01-01")).total_seconds())]
@@ -92,7 +93,12 @@ class DailyUpdater:
             if any(pd.isna(item[k]) for k in ("open", "high", "low", "close")):
                 errors.append({"code": row["code"], "reason": "官方當日價格欄位不完整"})
                 continue
-            frame = groups.get_group((row["code"], row["market"])).drop(columns=["code", "name", "market"])
+            try:
+                frame = groups.get_group((row["code"], row["market"])).drop(columns=["code", "name", "market"])
+            except KeyError:
+                if not any(error["code"] == row["code"] for error in errors):
+                    errors.append({"code": row["code"], "reason": "無法取得足夠的歷史資料"})
+                continue
             frame = frame.dropna().drop_duplicates("time").sort_values("time")
             if len(frame[frame.tick_volume > 0]) < 65:
                 errors.append({"code": row["code"], "reason": "有效歷史不足 65 根日 K"})

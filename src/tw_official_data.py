@@ -222,18 +222,26 @@ def selected_history(start, end, symbols, progress=None):
     jobs = [(monthly_history, (r["code"], r["market"], m.date(), end if m.date() == end.replace(day=1) else False))
             for r in symbols if r["market"] == "otc" for m in months]
     jobs += [(finmind_history, (r["code"], start, end)) for r in symbols if r["market"] == "listed"]
-    frames = []
+    frames, failures = [], {}
     pool = ThreadPoolExecutor(max_workers=2)
     futures = {pool.submit(fn, *args): args[0] for fn, args in jobs}
     try:
         for done, future in enumerate(as_completed(futures), 1):
-            frames.append(future.result())
+            code = futures[future]
+            try:
+                frames.append(future.result())
+            except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
+                failures.setdefault(code, f"歷史資料取得失敗（{type(exc).__name__}）")
             if progress:
                 progress(done, len(jobs))
     finally:
         pool.shutdown(wait=True, cancel_futures=True)
     nonempty = [f for f in frames if not f.empty]
-    return pd.concat(nonempty, ignore_index=True).sort_values("time") if nonempty else pd.DataFrame(columns=COLUMNS)
+    result = (pd.concat(nonempty, ignore_index=True).sort_values("time")
+              if nonempty else pd.DataFrame(columns=COLUMNS))
+    result.attrs["errors"] = [{"code": code, "reason": reason}
+                              for code, reason in sorted(failures.items())]
+    return result
 
 
 def latest_reports(cutoff):

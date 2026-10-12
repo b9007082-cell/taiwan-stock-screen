@@ -9,7 +9,7 @@ import pandas as pd
 from src.tw_daily_update import DailyUpdater
 from src.tw_intraday_update import IntradayUpdater, fetch_twse_mis_snapshot
 from src.tw_official_data import (parse_report, latest_reports, monthly_history, finmind_history,
-                                  institutional_daily_report, institutional_history)
+                                  institutional_daily_report, institutional_history, selected_history)
 from scripts.screen_tw_pullback import (signal, swing_structure, bullish_reasons,
                                         technical_indicators, above_ma20, classify_rising_stage,
                                         pullback_volume_contracted)
@@ -271,6 +271,24 @@ class OfficialDataTests(unittest.TestCase):
             self.assertTrue(job.start())
             self.assertFalse(job.start())
             thread.return_value.start.assert_called_once()
+
+    def test_selected_history_skips_individual_provider_failure(self):
+        frame = pd.DataFrame([{"code": "2330", "name": "2330", "market": "listed",
+                               "time": 1, "open": 1, "high": 1, "low": 1,
+                               "close": 1, "tick_volume": 1000}])
+
+        def fetch(code, start, end):
+            if code == "8213":
+                raise ValueError("provider limit")
+            return frame
+
+        symbols = [{"code": "2330", "market": "listed"},
+                   {"code": "8213", "market": "listed"}]
+        with patch("src.tw_official_data.finmind_history", side_effect=fetch):
+            result = selected_history(date(2026, 5, 1), date(2026, 10, 12), symbols)
+        self.assertEqual(result.code.tolist(), ["2330"])
+        self.assertEqual(result.attrs["errors"], [{
+            "code": "8213", "reason": "歷史資料取得失敗（ValueError）"}])
 
     def test_otc_monthly_volume_and_cache(self):
         payload = {"date": "20260901", "tables": [{"fields": ["日 期", "成交張數", "開盤", "最高", "最低", "收盤"],
