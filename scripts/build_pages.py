@@ -79,7 +79,7 @@ def build(snapshot, destination):
     (downloads / 'analysis.json').write_text(json.dumps(analysis, ensure_ascii=False, allow_nan=False), encoding='utf-8')
     fields = ['code', 'name', 'list_type', 'rising_stage', 'rising_stage_reason',
               'kd_golden_cross', 'macd_red_bar', 'current_price', 'change_pct',
-              'p_touch', 'p_hold', 'n_events', 'trend_label',
+              'p_rise_5d', 'rise_5d_samples', 'p_touch', 'p_hold', 'n_events', 'trend_label',
               'nearest_distance_atr', 'nearest_support', 'nearest_resistance', 'n_zones', 'error']
     pd.DataFrame(analysis).reindex(columns=fields).to_csv(downloads / 'analysis.csv', index=False, encoding='utf-8-sig')
     with zipfile.ZipFile(downloads / 'stocks.zip', 'a', zipfile.ZIP_DEFLATED) as bundle:

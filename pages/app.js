@@ -111,7 +111,7 @@ function show(stock) {
   $('csv').href = `downloads/${stock.code}_D1.csv`;
   $('metrics').replaceChildren();
   const analysis=stock.analysis || {};
-  for (const [label,value] of [['觸及機率',probability(analysis.p_touch)],['守住機率',probability(analysis.p_hold)],['歷史被測試',analysis.n_events == null ? '—' : `${analysis.n_events} 次`],['趨勢',analysis.trend_label || '—'],['最近支撐',nullable(analysis.nearest_support)],['最近壓力',nullable(analysis.nearest_resistance)],['距離',analysis.nearest_distance_atr == null ? '—' : `${number(Math.abs(analysis.nearest_distance_atr))} ATR`],['關鍵位',nullable(analysis.n_zones)]]) {
+  for (const [label,value] of [['5日上漲機率',probability(analysis.p_rise_5d)],['歷史樣本',analysis.rise_5d_samples == null ? '—' : `${analysis.rise_5d_samples} 次`],['觸及機率',probability(analysis.p_touch)],['守住機率',probability(analysis.p_hold)],['歷史被測試',analysis.n_events == null ? '—' : `${analysis.n_events} 次`],['趨勢',analysis.trend_label || '—'],['最近支撐',nullable(analysis.nearest_support)],['最近壓力',nullable(analysis.nearest_resistance)],['距離',analysis.nearest_distance_atr == null ? '—' : `${number(Math.abs(analysis.nearest_distance_atr))} ATR`],['關鍵位',nullable(analysis.n_zones)]]) {
     const item=document.createElement('div'), term=document.createElement('dt'), desc=document.createElement('dd');
     term.textContent=label; desc.textContent=value; item.append(term,desc); $('metrics').append(item);
   }
@@ -217,6 +217,8 @@ function show(stock) {
 }
 function render() {
   const query=$('search').value.trim().toLowerCase(), market=$('market').value, sort=$('sort').value;
+  const ranked=currentStocks().slice().sort((a,b)=>((b.analysis?.p_rise_5d ?? -Infinity)-(a.analysis?.p_rise_5d ?? -Infinity))||a.code.localeCompare(b.code));
+  const riseRanks=new Map(ranked.map((stock,index)=>[stock.code,index+1]));
   const matches=currentStocks().filter(s=>(!market||s.market===market)&&`${s.code} ${s.name}`.toLowerCase().includes(query))
     .sort((a,b)=>sort==='code'?a.code.localeCompare(b.code):((b.analysis?.[sort] ?? b[sort] ?? -Infinity) - (a.analysis?.[sort] ?? a[sort] ?? -Infinity)) || a.code.localeCompare(b.code));
   $('count').textContent=`${matches.length} 檔`;
@@ -234,7 +236,8 @@ function render() {
       : (a.change_pct ?? (stock.previous_close > 0 ? (stock.close/stock.previous_close-1)*100 : null));
     const priceText=currentPrice==null?'—':`${number(currentPrice)}${data.is_intraday?'（盤中）':''}`;
     const changeText=change==null?'—':`${change>=0?'+':''}${number(change)}%${data.is_intraday?'（盤中）':''}`;
-    const values=[priceText,changeText,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',stock.rising_stage || '—',yesNo(stock.kd_golden_cross),yesNo(stock.macd_red_bar),a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?`≥${volumeThresholdText()}`:number(stock.volume_lots),`${stock.pullback_pct}%`];
+    const riseRank=a.p_rise_5d==null?'—':`#${riseRanks.get(stock.code)} · ${probability(a.p_rise_5d)}`;
+    const values=[priceText,changeText,riseRank,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',stock.rising_stage || '—',yesNo(stock.kd_golden_cross),yesNo(stock.macd_red_bar),a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?`≥${volumeThresholdText()}`:number(stock.volume_lots),`${stock.pullback_pct}%`];
     for(const [i,value] of values.entries()) { const td=document.createElement('td'); td.textContent=value; if(i===1 && change!=null) td.className=change>=0?'price-up':'price-down'; row.append(td); }
     $('rows').append(row);
   }
