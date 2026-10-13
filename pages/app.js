@@ -50,7 +50,8 @@ let activeView = 'confirmed';
 let visibleBars = 0;
 let showPivots = true;
 let showTurns = true;
-const currentStocks = () => activeView === 'waiting' ? (data.waiting_matches || []) : data.matches;
+const views = {confirmed:['matches','止跌紅 K'],waiting:['waiting_matches','回檔後等待紅 K'],'bull-confirmation':['bull_confirmation_matches','多頭確認'],'consolidation-breakout':['consolidation_breakout_matches','盤整突破']};
+const currentStocks = () => data?.[views[activeView][0]] || [];
 function zoomChart(action) {
   if (!window.Plotly || !selected) return;
   const count = data.candles[selected].length;
@@ -116,7 +117,8 @@ function show(stock) {
     term.textContent=label; desc.textContent=value; item.append(term,desc); $('metrics').append(item);
   }
   if(analysis.error) { const warning=document.createElement('div'); warning.textContent=analysis.error; $('metrics').append(warning); }
-  const labels={hhhl:'頭頭高底底高',ma3:'三線多排',ma4:'四線多排'};
+  const labels={hhhl:'頭頭高底底高',ma3:'三線多排',ma4:'四線多排',higher_lows:'底底高',consolidation:'盤整突破'};
+  const signalLabel=views[activeView][1];
   const ma=stock.ma || {};
   const temporary=stock.intraday_bar || {};
   const institutional=stock.institutional_flows || [];
@@ -124,9 +126,15 @@ function show(stock) {
   const highLabel=stock.red_k_confirmed?'紅 K 高點':'今日 K 高點';
   const lowLabel=stock.red_k_confirmed?'紅 K 低點':'今日 K 低點';
   const details = data.is_intraday
-    ? [['訊號狀態',stock.red_k_confirmed?'止跌紅 K':'等待紅 K'],['暫時 K 截至',temporary.as_of?new Date(temporary.as_of).toLocaleTimeString('zh-TW',{timeZone:'Asia/Taipei'}):'—'],['暫時開／高／低／現',temporary.open==null?'—':`${number(temporary.open)}／${number(temporary.high)}／${number(temporary.low)}／${number(temporary.close)}`],['盤中累積成交量',temporary.tick_volume==null?'—':`${number(temporary.tick_volume/1000)} 張`],['三大法人買賣超',latestInstitutional?`${latestInstitutional.date} ${latestInstitutional.net_lots>=0?'+':''}${number(latestInstitutional.net_lots)} 張`:'—'],['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['位於月線之上',yesNo(stock.above_ma20)],['今日量大於昨量（參考）',yesNo(stock.volume_increased)],['回檔下跌量縮',yesNo(stock.pullback_volume_contracted)],['上漲階段',stock.rising_stage || '—'],['階段依據',stock.rising_stage_reason || '—'],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['成交量門檻',`已達 ${volumeThresholdText()} 張`],['回檔幅度',`${stock.pullback_pct}%`],['歷史日 K',stock.data_bars]]
-    : [['訊號狀態',stock.red_k_confirmed?'止跌紅 K':'等待紅 K'],['三大法人買賣超',latestInstitutional?`${latestInstitutional.date} ${latestInstitutional.net_lots>=0?'+':''}${number(latestInstitutional.net_lots)} 張`:'—'],['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['位於月線之上',yesNo(stock.above_ma20)],['今日量大於昨量（參考）',yesNo(stock.volume_increased)],['回檔下跌量縮',yesNo(stock.pullback_volume_contracted)],['上漲階段',stock.rising_stage || '—'],['階段依據',stock.rising_stage_reason || '—'],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['MA5',ma['5']],['MA10',ma['10']],['MA20',ma['20']],['MA60',ma['60']],['昨收',stock.previous_close],[highLabel,stock.high],[lowLabel,stock.low],['近六日低點',stock.pullback_low],['回檔幅度',`${stock.pullback_pct}%`],['收盤位置',`${number(stock.close_position*100)}%`],['歷史日 K',stock.data_bars]];
+    ? [['訊號狀態',signalLabel],['暫時 K 截至',temporary.as_of?new Date(temporary.as_of).toLocaleTimeString('zh-TW',{timeZone:'Asia/Taipei'}):'—'],['暫時開／高／低／現',temporary.open==null?'—':`${number(temporary.open)}／${number(temporary.high)}／${number(temporary.low)}／${number(temporary.close)}`],['盤中累積成交量',temporary.tick_volume==null?'—':`${number(temporary.tick_volume/1000)} 張`],['三大法人買賣超',latestInstitutional?`${latestInstitutional.date} ${latestInstitutional.net_lots>=0?'+':''}${number(latestInstitutional.net_lots)} 張`:'—'],['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['位於月線之上',yesNo(stock.above_ma20)],['今日量大於昨量（參考）',yesNo(stock.volume_increased)],['回檔下跌量縮',yesNo(stock.pullback_volume_contracted)],['上漲階段',stock.rising_stage || '—'],['階段依據',stock.rising_stage_reason || '—'],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['成交量門檻',`已達 ${volumeThresholdText()} 張`],['回檔幅度',`${stock.pullback_pct}%`],['歷史日 K',stock.data_bars]]
+    : [['訊號狀態',signalLabel],['三大法人買賣超',latestInstitutional?`${latestInstitutional.date} ${latestInstitutional.net_lots>=0?'+':''}${number(latestInstitutional.net_lots)} 張`:'—'],['多頭依據',(stock.bullish_reasons||[]).map(r=>labels[r]).join('、')],['位於月線之上',yesNo(stock.above_ma20)],['今日量大於昨量（參考）',yesNo(stock.volume_increased)],['回檔下跌量縮',yesNo(stock.pullback_volume_contracted)],['上漲階段',stock.rising_stage || '—'],['階段依據',stock.rising_stage_reason || '—'],['KD(5,3,3) 黃金交叉',yesNo(stock.kd_golden_cross)],['K / D',`${number(stock.kd_k)} / ${number(stock.kd_d)}`],['MACD(6,13,9) 紅柱',yesNo(stock.macd_red_bar)],['MA5',ma['5']],['MA10',ma['10']],['MA20',ma['20']],['MA60',ma['60']],['昨收',stock.previous_close],[highLabel,stock.high],[lowLabel,stock.low],['近六日低點',stock.pullback_low],['回檔幅度',`${stock.pullback_pct}%`],['收盤位置',`${number(stock.close_position*100)}%`],['歷史日 K',stock.data_bars]];
   details.push(
+    ['波段突破高點',stock.prior_swing_high == null ? '—' : number(stock.prior_swing_high)],
+    ['前十日盤整上頸線',stock.neckline == null ? '—' : number(stock.neckline)],
+    ['底底高',yesNo(stock.higher_lows)],
+    ['三條均線各自上揚',yesNo(stock.ma5_10_20_rising)],
+    ['盤整區間寬度',stock.consolidation_width_pct == null ? '—' : `${number(stock.consolidation_width_pct)}%`],
+    ['實體紅 K',yesNo(stock.solid_red)],
     ['站上 5 日線',yesNo(stock.above_ma5)],
     ['站上前日最高價',yesNo(stock.reclaimed_previous_high)],
     ['進場量條件',yesNo(stock.entry_volume_met)],
@@ -245,7 +253,7 @@ function render() {
     const priceText=currentPrice==null?'—':`${number(currentPrice)}${data.is_intraday?'（盤中）':''}`;
     const changeText=change==null?'—':`${change>=0?'+':''}${number(change)}%${data.is_intraday?'（盤中）':''}`;
     const compositeRank=a.composite_score==null?'—':`#${compositeRanks.get(stock.code)} · ${number(a.composite_score)}`;
-    const values=[priceText,changeText,compositeRank,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',stock.rising_stage || '—',yesNo(stock.kd_golden_cross),yesNo(stock.macd_red_bar),a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?`≥${volumeThresholdText()}`:number(stock.volume_lots),`${stock.pullback_pct}%`];
+    const values=[priceText,changeText,compositeRank,probability(a.p_touch),probability(a.p_hold),a.n_events==null?'—':`${a.n_events} 次`,a.trend_label || '—',stock.rising_stage || '—',yesNo(stock.kd_golden_cross),yesNo(stock.macd_red_bar),a.nearest_distance_atr==null?'—':`${number(Math.abs(a.nearest_distance_atr))} ATR`,nullable(a.nearest_support),nullable(a.nearest_resistance),nullable(a.n_zones),data.is_intraday?`≥${volumeThresholdText()}`:number(stock.volume_lots),activeView==='confirmed'||activeView==='waiting'?`${stock.pullback_pct}%`:'—'];
     for(const [i,value] of values.entries()) { const td=document.createElement('td'); td.textContent=value; if(i===1 && change!=null) td.className=change>=0?'price-up':'price-down'; row.append(td); }
     $('rows').append(row);
   }
@@ -255,23 +263,27 @@ function render() {
 if(!data) { $('status').textContent='資料載入失敗，請重新整理或稍後再試。'; document.querySelector('.download').hidden=true; }
 else {
   const waiting=data.waiting_matches || [];
+  const bull=data.bull_confirmation_matches || [];
+  const breakout=data.consolidation_breakout_matches || [];
   $('date').textContent=data.date;
   $('current-price-heading').textContent='現價';
   $('current-price-heading').title=data.is_intraday?'證交所／櫃買中心盤中最新價，收盤前仍會變動':'資料日收盤價';
   $('confirmed-count').textContent=`${data.matches.length} 檔`;
   $('waiting-count').textContent=`${waiting.length} 檔`;
+  $('bull-confirmation-count').textContent=`${bull.length} 檔`;
+  $('consolidation-breakout-count').textContent=`${breakout.length} 檔`;
   const age=Math.floor((Date.now()-new Date(`${data.date}T00:00:00+08:00`).getTime())/86400000);
   const asOf=data.as_of?new Date(data.as_of).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'}):'';
   const coverage=data.snapshot_universe!=null&&data.universe_size!=null?` · 有效快照 ${data.snapshot_universe}/${data.universe_size} 檔`:'';
   $('status').textContent=data.is_intraday
-    ? `盤中暫定（截至 ${asOf}）${coverage} · 累積量達 ${volumeThresholdText()} 張 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · 13:30 收盤前條件仍可能改變。`
-    : `成交量達標 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
+    ? `盤中暫定（截至 ${asOf}）${coverage} · 累積量達 ${volumeThresholdText()} 張 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · 多頭確認 ${bull.length} 檔 · 盤整突破 ${breakout.length} 檔 · 13:30 收盤前條件仍可能改變。`
+    : `成交量達標 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · 多頭確認 ${bull.length} 檔 · 盤整突破 ${breakout.length} 檔 · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
   if(data.is_intraday) $('analysis-note').textContent=`本頁為盤中暫定篩選結果；成交量門檻固定為累積 ${volumeThresholdText()} 張。圖表最右側「盤中暫時 K」與「盤中暫時量」使用證交所 MIS 的開、高、低、最新價及當下累積成交量，收盤前仍會變動；量 MA5／MA10 只計算完整日成交量。三大法人買賣超採證交所／櫃買中心盤後資料，買超為紅柱、賣超為綠柱；綠線為顯示區間內的累計買賣超，採獨立隱藏刻度呈現方向與變化。盤中不會產生暫時法人柱。頭、底與轉折採 line-lab 的左右波段確認方式，可分別顯示或隱藏；暫時 K 尚未形成已確認轉折。支撐壓力與機率仍以最近完整收盤資料計算。`;
   $('built').textContent=`網頁產生時間 ${new Date(data.built_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})}（台灣）`;
   for(const id of ['search','market','sort']) $(id).addEventListener(id==='search'?'input':'change',render);
-  for(const view of ['confirmed','waiting']) $(view+'-tab').addEventListener('click',()=>{
+  for(const view of Object.keys(views)) $(view+'-tab').addEventListener('click',()=>{
     activeView=view; selected=null;
-    for(const name of ['confirmed','waiting']) $(name+'-tab').setAttribute('aria-selected',String(name===view));
+    for(const name of Object.keys(views)) $(name+'-tab').setAttribute('aria-selected',String(name===view));
     render();
   });
   render();

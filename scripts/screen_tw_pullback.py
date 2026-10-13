@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.fetch_tw_stock_data import fetch_all_symbols
 from src.tw_official_data import latest_reports, selected_history
 
-SCREENING = "bull_pullback_or_ma_v11_photo_entry"
+SCREENING = "bull_pullback_or_ma_v12_four_screens"
 MIN_VOLUME_LOTS = 1500
 MIN_VOLUME_SHARES = MIN_VOLUME_LOTS * 1000
 CRITERIA = {
@@ -26,10 +26,12 @@ CRITERIA = {
     "minimum_bars": 65,
     "min_volume_lots": MIN_VOLUME_LOTS,
     "entry_indicators": "KD(5,3,3): K rising OR K > D OR golden cross; MACD(6,13,9): positive histogram growing OR negative histogram shrinking OR negative-to-positive; at least one group must qualify",
+    "bull_confirmation": "Two rising confirmed swing lows; red close crosses above latest confirmed swing high from yesterday; SMA5/10/20 each rising; above SMA20; entry volume and KD/MACD gate",
+    "consolidation_breakout": "Prior 10 complete bars within 12% range and SMA20 rising; solid red body >= 50% of range; close above prior 10-bar high and SMA20; entry volume and KD/MACD gate",
 }
 
 
-def swing_structure(frame):
+def swing_pivots(frame):
     df = frame.tail(60).reset_index(drop=True)
     high = df.high.gt(df.high.shift(1)) & df.high.gt(df.high.shift(2)) & df.high.gt(df.high.shift(-1)) & df.high.gt(df.high.shift(-2))
     low = df.low.lt(df.low.shift(1)) & df.low.lt(df.low.shift(2)) & df.low.lt(df.low.shift(-1)) & df.low.lt(df.low.shift(-2))
@@ -46,6 +48,12 @@ def swing_structure(frame):
                 pivots[-1] = point
         else:
             pivots.append(point)
+    return pivots
+
+
+def swing_structure(frame):
+    df = frame.tail(60).reset_index(drop=True)
+    pivots = swing_pivots(df)
     highs = [p for p in pivots if p['kind'] == 'high'][-2:]
     lows = [p for p in pivots if p['kind'] == 'low'][-2:]
     if len(highs) < 2 or len(lows) < 2:
@@ -153,7 +161,7 @@ def pullback_volume_contracted(frame, lookback=5):
     return bool(up_average > 0 and down_average < up_average and slope < 0)
 
 
-def signal(frame, require_stabilization=True):
+def signal(frame, require_stabilization=True, screen="pullback"):
     df = frame.sort_values("time").drop_duplicates("time", keep="last").dropna().copy()
     df = df[df.tick_volume > 0]
     if len(df) < 65:
@@ -174,9 +182,8 @@ def signal(frame, require_stabilization=True):
     entry_volume_met = bool(today.tick_volume >= yesterday.tick_volume * 1.5
                             or today.tick_volume > prior_volume5)
     above_monthly = above_ma20(close)
-    if not (reasons and above_monthly and pullback_volume_shrinking
-            and 3 <= pullback <= 15 and declining >= 2):
-        return None
+    if screen not in ("pullback", "bull_confirmation", "consolidation_breakout"):
+        raise ValueError(f"Unknown screen: {screen}")
     indicators = technical_indicators(df)
     averages = {n: float(ma[n].iloc[-1]) for n in ma}
     above_ma5 = bool(today.close > averages[5])
@@ -185,8 +192,39 @@ def signal(frame, require_stabilization=True):
                          and today.low >= yesterday.low * 0.99 and position >= 0.4
                          and above_ma5 and reclaimed_previous_high and entry_volume_met
                          and (indicators["kd_entry_signal"] or indicators["macd_entry_signal"]))
-    if require_stabilization and not stabilization:
+    momentum_and_volume = entry_volume_met and (indicators["kd_entry_signal"] or indicators["macd_entry_signal"])
+    pullback_ready = bool(reasons and above_monthly and pullback_volume_shrinking
+                          and 3 <= pullback <= 15 and declining >= 2)
+    previous = df.iloc[:-1]
+    pivots = swing_pivots(previous)
+    swing_highs = [point for point in pivots if point['kind'] == 'high']
+    swing_lows = [point for point in pivots if point['kind'] == 'low']
+    prior_swing_high = swing_highs[-1]['price'] if swing_highs else None
+    higher_lows = bool(len(swing_lows) >= 2 and swing_lows[-1]['price'] > swing_lows[-2]['price']
+                       and float(today.low) >= swing_lows[-1]['price']
+                       and float(previous.tail(60).reset_index(drop=True).low.iloc[swing_lows[-1]['index'] + 1:].min()) >= swing_lows[-1]['price'])
+    ma_rising = all(float(ma[n].iloc[-1]) > float(ma[n].iloc[-2]) for n in (5, 10, 20))
+    bull_confirmed = bool(higher_lows and prior_swing_high is not None
+                          and yesterday.close <= prior_swing_high < today.close
+                          and today.close > today.open and above_monthly and ma_rising and momentum_and_volume)
+    box = previous.tail(10)
+    neckline = float(box.high.max())
+    box_low = float(box.low.min())
+    box_width = (neckline / box_low - 1) if box_low > 0 else float('inf')
+    consolidation = bool(box_width <= 0.12 and float(ma[20].iloc[-11]) > float(ma[20].iloc[-21]))
+    solid_red = bool(span > 0 and today.close > today.open and (today.close - today.open) / span >= 0.5)
+    breakout = bool(consolidation and solid_red and today.close > neckline and above_monthly
+                    and momentum_and_volume)
+    if screen == "pullback" and (not pullback_ready or (require_stabilization and not stabilization)):
         return None
+    if screen == "bull_confirmation" and not bull_confirmed:
+        return None
+    if screen == "consolidation_breakout" and not breakout:
+        return None
+    if screen == "bull_confirmation":
+        reasons = list(dict.fromkeys([*reasons, 'higher_lows']))
+    if screen == "consolidation_breakout":
+        reasons = list(dict.fromkeys([*reasons, 'consolidation']))
     rising_stage, rising_stage_reason = classify_rising_stage(close, averages, ma[20], indicators)
     volume5 = df.tick_volume.tail(5).mean() / 1000
     volume10 = df.tick_volume.tail(10).mean() / 1000
@@ -212,6 +250,10 @@ def signal(frame, require_stabilization=True):
         "volume5_lots": round(float(volume5), 2), "volume10_lots": round(float(volume10), 2),
         "prior_peak": peak, "pullback_low": float(df.low.tail(6).min()),
         "reclaimed_previous_high": reclaimed_previous_high,
+        "bull_confirmation": bull_confirmed, "consolidation_breakout": breakout,
+        "prior_swing_high": prior_swing_high, "higher_lows": higher_lows,
+        "ma5_10_20_rising": ma_rising, "neckline": neckline,
+        "consolidation_width_pct": round(box_width * 100, 2), "solid_red": solid_red,
         "data_bars": len(df),
     }
 

@@ -154,6 +154,7 @@ class IntradayUpdater:
         folder = self.root / "data" / "tw_intraday" / now.strftime("%Y%m%d_%H%M%S_%f")
         folder.mkdir(parents=True)
         matches, waiting_matches, selected, errors = [], [], [], list(history_errors)
+        bull_confirmation_matches, consolidation_breakout_matches = [], []
         groups = history.groupby(["code", "market"]) if not history.empty else None
         current_time = int((pd.Timestamp(quote_day) - pd.Timestamp("1970-01-01")).total_seconds())
         self.update(stage=f"執行 {MIN_VOLUME_LOTS:,} 張盤中篩選", done=0)
@@ -172,52 +173,31 @@ class IntradayUpdater:
                 "low": item["low"], "close": item["close"],
                 "tick_volume": item["total_volume"] * 1000,
             }])
-            metrics = signal(pd.concat([closed, live], ignore_index=True), require_stabilization=False)
-            if metrics is None:
+            combined = pd.concat([closed, live], ignore_index=True)
+            metrics = signal(combined, require_stabilization=False)
+            bull = signal(combined, screen="bull_confirmation")
+            breakout = signal(combined, screen="consolidation_breakout")
+            if not (metrics or bull or breakout):
                 continue
-            public = {
-                "code": code, "name": item["name"], "market": market,
-                "intraday_bar": {
-                    "date": str(quote_day),
-                    "as_of": item["quote_time"].isoformat(),
-                    "open": float(item["open"]), "high": float(item["high"]),
-                    "low": float(item["low"]), "close": float(item["close"]),
-                    "tick_volume": int(item["total_volume"] * 1000),
-                    "is_partial": True,
-                },
-                "bullish_reasons": metrics["bullish_reasons"],
-                "structure": metrics["structure"],
-                "kd_k": metrics["kd_k"], "kd_d": metrics["kd_d"],
-                "kd_golden_cross": metrics["kd_golden_cross"],
-                "kd_rising": metrics["kd_rising"],
-                "kd_bullish": metrics["kd_bullish"],
-                "kd_entry_signal": metrics["kd_entry_signal"],
-                "macd_red_bar": metrics["macd_red_bar"],
-                "macd_red_growing": metrics["macd_red_growing"],
-                "macd_green_shrinking": metrics["macd_green_shrinking"],
-                "macd_green_to_red": metrics["macd_green_to_red"],
-                "macd_entry_signal": metrics["macd_entry_signal"],
-                "above_ma20": metrics["above_ma20"],
-                "above_ma5": metrics["above_ma5"],
-                "volume_increased": metrics["volume_increased"],
-                "entry_volume_met": metrics["entry_volume_met"],
-                "prior_volume5_lots": metrics["prior_volume5_lots"],
-                "is_red_candle": metrics["is_red_candle"],
-                "red_k_confirmed": metrics["red_k_confirmed"],
-                "pullback_volume_contracted": metrics["pullback_volume_contracted"],
-                "rising_stage": metrics["rising_stage"],
-                "rising_stage_reason": metrics["rising_stage_reason"],
-                "pullback_pct": metrics["pullback_pct"],
-                "prior_declining_days": metrics["prior_declining_days"],
-                "reclaimed_previous_high": metrics["reclaimed_previous_high"],
-                "data_bars": metrics["data_bars"],
-                "volume_threshold_met": True,
+            intraday_bar = {
+                "date": str(quote_day), "as_of": item["quote_time"].isoformat(),
+                "open": float(item["open"]), "high": float(item["high"]),
+                "low": float(item["low"]), "close": float(item["close"]),
+                "tick_volume": int(item["total_volume"] * 1000), "is_partial": True,
             }
-            if metrics["red_k_confirmed"]:
-                matches.append(public)
-            elif not metrics["is_red_candle"]:
-                waiting_matches.append(public)
-            else:
+            def public(candidate):
+                return {**candidate, "code": code, "name": item["name"], "market": market,
+                        "intraday_bar": intraday_bar, "volume_threshold_met": True}
+            if metrics is not None:
+                if metrics["red_k_confirmed"]:
+                    matches.append(public(metrics))
+                elif not metrics["is_red_candle"]:
+                    waiting_matches.append(public(metrics))
+            if bull is not None:
+                bull_confirmation_matches.append(public(bull))
+            if breakout is not None:
+                consolidation_breakout_matches.append(public(breakout))
+            if not (bull or breakout or (metrics and (metrics["red_k_confirmed"] or not metrics["is_red_candle"]))):
                 continue
             closed.to_parquet(folder / f"{code}_D1.parquet", index=False)
             export = closed.copy()
@@ -228,6 +208,8 @@ class IntradayUpdater:
 
         matches.sort(key=lambda r: r["code"])
         waiting_matches.sort(key=lambda r: r["code"])
+        bull_confirmation_matches.sort(key=lambda r: r["code"])
+        consolidation_breakout_matches.sort(key=lambda r: r["code"])
         _write_csv(folder / "tw_stock_symbols.csv", selected,
                    ["code", "name", "market", "last_date", "volume_lots"])
         _write_csv(folder / "fetch_errors.csv", errors, ["code", "reason"])
@@ -237,7 +219,9 @@ class IntradayUpdater:
             "universe_size": len(rows), "snapshot_universe": len(snapshot),
             "snapshot_coverage": round(snapshot_coverage, 4),
             "liquid_universe": len(liquid), "red_candidates": len(red_candidates),
-            "matches": matches, "waiting_matches": waiting_matches, "criteria": CRITERIA,
+            "matches": matches, "waiting_matches": waiting_matches,
+            "bull_confirmation_matches": bull_confirmation_matches,
+            "consolidation_breakout_matches": consolidation_breakout_matches, "criteria": CRITERIA,
         }
         (folder / "screening_results.json").write_text(
             json.dumps(result, ensure_ascii=False), encoding="utf-8")
@@ -257,6 +241,6 @@ class IntradayUpdater:
                     bundle.write(path, path.name)
         self.activate(str(folder))
         self.update(status="complete", stage="完成", data_dir=str(folder), archive=str(archive),
-                    selected=len(matches) + len(waiting_matches), failed=len(errors),
+                    selected=len(selected), failed=len(errors),
                     source="TWSE MIS intraday snapshot")
 

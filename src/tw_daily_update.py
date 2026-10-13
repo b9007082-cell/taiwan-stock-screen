@@ -79,6 +79,7 @@ class DailyUpdater:
                     selected=0, min_volume_lots=MIN_VOLUME_LOTS, screening=SCREENING,
                     liquid_universe=len(liquid), red_candidates=len(red_candidates))
         selected, errors, matches, waiting_matches = [], [], [], []
+        bull_confirmation_matches, consolidation_breakout_matches = [], []
         history = selected_history(start, target, liquid.to_dict("records"),
                                    lambda done, total: self.update(done=done, total=total)) if len(liquid) else liquid.copy()
         errors.extend(history.attrs.get("errors", []))
@@ -104,13 +105,18 @@ class DailyUpdater:
                 errors.append({"code": row["code"], "reason": "有效歷史不足 65 根日 K"})
                 continue
             metrics = signal(frame, require_stabilization=False)
-            if metrics is None:
-                continue
-            if metrics["red_k_confirmed"]:
-                matches.append({**row, **metrics})
-            elif not metrics["is_red_candle"]:
-                waiting_matches.append({**row, **metrics})
-            else:
+            bull = signal(frame, screen="bull_confirmation")
+            breakout = signal(frame, screen="consolidation_breakout")
+            if metrics is not None:
+                if metrics["red_k_confirmed"]:
+                    matches.append({**row, **metrics})
+                elif not metrics["is_red_candle"]:
+                    waiting_matches.append({**row, **metrics})
+            if bull is not None:
+                bull_confirmation_matches.append({**row, **bull})
+            if breakout is not None:
+                consolidation_breakout_matches.append({**row, **breakout})
+            if not (bull or breakout or (metrics and (metrics["red_k_confirmed"] or not metrics["is_red_candle"]))):
                 continue
             shares = float(item["tick_volume"])
             frame.to_parquet(folder / f"{row['code']}_D1.parquet", index=False)
@@ -123,6 +129,8 @@ class DailyUpdater:
 
         matches.sort(key=lambda r: r["code"])
         waiting_matches.sort(key=lambda r: r["code"])
+        bull_confirmation_matches.sort(key=lambda r: r["code"])
+        consolidation_breakout_matches.sort(key=lambda r: r["code"])
         selected.sort(key=lambda r: r["code"])
         write_csv(folder / "tw_stock_symbols.csv", selected,
                   ["code", "name", "market", "last_date", "volume_lots"])
@@ -132,6 +140,8 @@ class DailyUpdater:
             "date": str(target), "screening": SCREENING, "min_volume_lots": MIN_VOLUME_LOTS,
             "liquid_universe": len(liquid), "red_candidates": len(red_candidates),
             "matches": matches, "waiting_matches": waiting_matches,
+            "bull_confirmation_matches": bull_confirmation_matches,
+            "consolidation_breakout_matches": consolidation_breakout_matches,
             "criteria": CRITERIA,
         }, ensure_ascii=False), encoding="utf-8")
         (folder / "source.json").write_text(json.dumps({

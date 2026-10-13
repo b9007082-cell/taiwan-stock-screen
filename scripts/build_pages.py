@@ -34,8 +34,11 @@ def build(snapshot, destination):
     downloads = destination / 'downloads'
     downloads.mkdir(exist_ok=True)
     candles = {}
-    stocks = result['matches'] + result.get('waiting_matches', [])
-    for stock in stocks:
+    screen_keys = ('matches', 'waiting_matches', 'bull_confirmation_matches', 'consolidation_breakout_matches')
+    stocks = [stock for key in screen_keys for stock in result.get(key, [])]
+    unique_stocks = list({stock['code']: stock for stock in stocks}.values())
+    stock_analysis = {}
+    for stock in unique_stocks:
         code = stock['code']
         if not (code.isdigit() and len(code) == 4):
             raise ValueError('Invalid stock code')
@@ -44,6 +47,7 @@ def build(snapshot, destination):
             stock['analysis'] = analyze_stock(snapshot, code)
         except Exception as exc:
             stock['analysis'] = {'error': f'分析失敗（{type(exc).__name__}）', 'zones': []}
+        stock_analysis[code] = stock['analysis']
         frame['date'] = pd.to_datetime(frame.time, unit='s').dt.strftime('%Y-%m-%d')
         candles[code] = frame[['date', 'open', 'high', 'low', 'close', 'tick_volume']].to_dict('records')
         intraday_bar = stock.get('intraday_bar') if result.get('is_intraday') else None
@@ -57,8 +61,9 @@ def build(snapshot, destination):
         shutil.copy2(snapshot / f'{code}_D1.csv', downloads / f'{code}_D1.csv')
     completed_days = {pd.to_datetime(bar['date']).date() for bars in candles.values()
                       for bar in bars if not bar.get('is_partial')}
-    flows = institutional_history(stocks, completed_days)
+    flows = institutional_history(unique_stocks, completed_days)
     for stock in stocks:
+        stock['analysis'] = dict(stock_analysis[stock['code']])
         rows = flows[flows.code == stock['code']]
         stock['institutional_flows'] = [
             {'date': str(row.date), 'foreign_lots': round(float(row.foreign_net) / 1000, 3),
@@ -71,8 +76,15 @@ def build(snapshot, destination):
     archive = snapshot / f"tw_stock_{result['date']}_{MIN_VOLUME_LOTS}lots.zip"
     shutil.copy2(archive, downloads / 'stocks.zip')
     confirmed_codes = {s['code'] for s in result['matches']}
+    list_types = {stock['code']: [key for key in screen_keys
+                  if any(item['code'] == stock['code'] for item in result.get(key, []))]
+                  for stock in unique_stocks}
     analysis = [{'code': s['code'], 'name': s['name'],
-                 'list_type': 'confirmed' if s['code'] in confirmed_codes else 'waiting',
+                 'list_type': ('confirmed' if s['code'] in confirmed_codes else
+                               'waiting' if 'waiting_matches' in list_types[s['code']] else
+                               'bull_confirmation' if 'bull_confirmation_matches' in list_types[s['code']] else
+                               'consolidation_breakout'),
+                 'all_lists': list_types[s['code']],
                  'rising_stage': s.get('rising_stage'),
                  'rising_stage_reason': s.get('rising_stage_reason'),
                  'kd_golden_cross': s.get('kd_golden_cross'),
@@ -82,7 +94,7 @@ def build(snapshot, destination):
                  'entry_volume_met': s.get('entry_volume_met'),
                  'kd_entry_signal': s.get('kd_entry_signal'),
                  'macd_entry_signal': s.get('macd_entry_signal'),
-                 **s['analysis']} for s in stocks]
+                 **s['analysis']} for s in unique_stocks]
     (downloads / 'analysis.json').write_text(json.dumps(analysis, ensure_ascii=False, allow_nan=False), encoding='utf-8')
     fields = ['code', 'name', 'list_type', 'rising_stage', 'rising_stage_reason',
               'kd_golden_cross', 'macd_red_bar', 'above_ma5', 'reclaimed_previous_high',

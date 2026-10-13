@@ -133,6 +133,30 @@ class PagesTests(unittest.TestCase):
             self.assertEqual(analysis[0]['list_type'], 'waiting')
             self.assertTrue((path / 'site/downloads/2338_D1.csv').exists())
 
+    def test_same_stock_in_new_tabs_uses_one_chart_and_analysis_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            stock = {'code': '2338', 'name': '交集股', 'market': 'listed',
+                     'bullish_reasons': ['higher_lows']}
+            self.snapshot(path, [])
+            result_path = path / 'screening_results.json'
+            result = json.loads(result_path.read_text(encoding='utf-8'))
+            result['bull_confirmation_matches'] = [dict(stock)]
+            result['consolidation_breakout_matches'] = [dict(stock)]
+            result_path.write_text(json.dumps(result), encoding='utf-8')
+            pd.DataFrame([{'time': 1790208000, 'open': 46.3, 'high': 47.45,
+                           'low': 46.05, 'close': 47.1, 'tick_volume': 4013030}]).to_parquet(
+                               path / '2338_D1.parquet')
+            (path / '2338_D1.csv').write_text('date,close\\n2026-09-24,47.1', encoding='utf-8')
+            build(path, path / 'site')
+            payload = (path / 'site/data.js').read_text(encoding='utf-8')
+            self.assertIn('"bull_confirmation_matches": [{', payload)
+            self.assertIn('"consolidation_breakout_matches": [{', payload)
+            analysis = json.loads((path / 'site/downloads/analysis.json').read_text(encoding='utf-8'))
+            self.assertEqual(len(analysis), 1)
+            self.assertEqual(set(analysis[0]['all_lists']),
+                             {'bull_confirmation_matches', 'consolidation_breakout_matches'})
+
     def test_intraday_temporary_candle_is_appended_to_public_chart_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp)

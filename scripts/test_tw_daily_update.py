@@ -119,6 +119,50 @@ class PullbackSignalTests(unittest.TestCase):
             self.assertIsNone(signal(frame))
 
 
+class NewScreenSignalTests(unittest.TestCase):
+    def test_bull_confirmation_breaks_confirmed_high_with_rising_lows(self):
+        frame = PullbackSignalTests().frame()
+        pivots = [
+            {'kind': 'low', 'price': 100.0, 'index': 10, 'time': 10},
+            {'kind': 'high', 'price': 176.0, 'index': 20, 'time': 20},
+            {'kind': 'low', 'price': 110.0, 'index': 30, 'time': 30},
+        ]
+        with patch('scripts.screen_tw_pullback.swing_pivots', return_value=pivots):
+            result = signal(frame, screen='bull_confirmation')
+            self.assertIsNotNone(result)
+            self.assertTrue(result['higher_lows'])
+            self.assertEqual(result['prior_swing_high'], 176)
+            self.assertTrue(result['ma5_10_20_rising'])
+            frame.loc[85, 'tick_volume'] = 2000000
+            self.assertIsNone(signal(frame, screen='bull_confirmation'))
+            frame.loc[85, 'tick_volume'] = 3000000
+            pivots[1]['price'] = 177
+            self.assertIsNone(signal(frame, screen='bull_confirmation'))
+            pivots[1]['price'] = 176
+            pivots[2]['price'] = 99
+            self.assertIsNone(signal(frame, screen='bull_confirmation'))
+
+    def test_consolidation_breakout_neckline_body_and_momentum(self):
+        closes = [90 + i * 0.18 for i in range(54)] + [100 + (i % 3 - 1) * 0.2 for i in range(10)] + [105]
+        frame = pd.DataFrame({'time': range(65), 'close': closes,
+                              'open': [v - 0.3 for v in closes],
+                              'high': [v + 1 for v in closes],
+                              'low': [v - 1 for v in closes],
+                              'tick_volume': [2000000] * 64 + [3000000]})
+        frame.loc[64, ['open', 'high', 'low']] = [100, 106, 99]
+        result = signal(frame, screen='consolidation_breakout')
+        self.assertIsNotNone(result)
+        self.assertTrue(result['solid_red'])
+        self.assertLessEqual(result['consolidation_width_pct'], 12)
+        frame.loc[60, 'high'] = 115
+        self.assertIsNone(signal(frame, screen='consolidation_breakout'))
+        frame.loc[60, 'high'] = closes[60] + 1
+        original = technical_indicators(frame)
+        with patch('scripts.screen_tw_pullback.technical_indicators',
+                   return_value={**original, 'kd_entry_signal': False, 'macd_entry_signal': False}):
+            self.assertIsNone(signal(frame, screen='consolidation_breakout'))
+
+
 class BullishOrTests(unittest.TestCase):
     def test_independent_branches_and_strict_order(self):
         self.assertEqual(bullish_reasons({}, {5: 1, 10: 2, 20: 3, 60: 4}), ['hhhl'])

@@ -13,7 +13,7 @@ function checkChart(mobile, partial=false) {
         return add;
       }, contains(name){return classes.has(name);}},
       append(...items){this.children.push(...items);}, replaceChildren(){this.children=[];},
-      addEventListener(){}, on(name,handler){this.handlers[name]=handler;}, removeAllListeners(name){delete this.handlers[name];},
+      addEventListener(name,handler){this.handlers[name]=handler;}, on(name,handler){this.handlers[name]=handler;}, removeAllListeners(name){delete this.handlers[name];},
       setAttribute(name,value){this.attributes[name]=String(value);}};
   }
   const nodes = new Map();
@@ -34,10 +34,16 @@ function checkChart(mobile, partial=false) {
   const Plotly = {purge(){}, Plots:{resize(){resizeCount++;}}, react(id,traces,l,c){chartTraces=traces;layout=l;config=c;},
     relayout(id,values){lastRelayout=values;if(Object.hasOwn(values,'xaxis.range')) range=values['xaxis.range'];}};
   const context = vm.createContext({document:{body,getElementById:get,createElement:element}, Plotly,
-    window:{STOCK_DATA:{matches:[stock,stock2],candles:{TEST:bars,TEST2:bars},date:'2026-09-29',built_at:'2026-09-29',min_volume_lots:1500},
+    window:{STOCK_DATA:{matches:[stock,stock2],waiting_matches:[],bull_confirmation_matches:[stock],consolidation_breakout_matches:[stock2],candles:{TEST:bars,TEST2:bars},date:'2026-09-29',built_at:'2026-09-29',min_volume_lots:1500},
       Plotly,addEventListener(){},matchMedia(){return {matches:mobile,addEventListener(){}};}}});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../pages/app.js'),'utf8'), context);
   assert.equal(get('rows').children[0].children[3].textContent,'#2 · 62.5');
+  get('bull-confirmation-tab').handlers.click();
+  assert.equal(get('rows').children.length,1);
+  assert.equal(get('rows').children[0].children[0].children[0].textContent,'TEST Test');
+  get('consolidation-breakout-tab').handlers.click();
+  assert.equal(get('rows').children[0].children[0].children[0].textContent,'TEST2 Test 2');
+  get('confirmed-tab').handlers.click();
   get('sort').value='composite_score';
   context.render();
   assert.equal(get('rows').children[0].children[0].children[0].textContent,'TEST2 Test 2');
