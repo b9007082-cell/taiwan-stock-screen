@@ -23,12 +23,12 @@ function checkChart(mobile, partial=false) {
   const bars = Array.from({length:100}, (_,i) => ({date:String(i),open:10,high:12,low:9,close:11,tick_volume:2000000+i*1000}));
   if(partial) Object.assign(bars[bars.length-1], {open:11,high:13,low:10,close:12,tick_volume:2500000,is_partial:true});
   const stock = {code:'TEST',name:'Test',market:'listed',close:11,previous_close:10.5,volume_lots:2000,pullback_pct:5,
-    analysis:{p_rise_5d:0.625,rise_5d_samples:80},ma:{},bullish_reasons:[],close_position:0.5,institutional_flows:[
+    analysis:{composite_score:62.5},ma:{},bullish_reasons:[],close_position:0.5,institutional_flows:[
     {date:'97',foreign_lots:300,trust_lots:50,dealer_lots:50,net_lots:400},
     {date:'98',foreign_lots:-250,trust_lots:20,dealer_lots:-70,net_lots:-300},
     {date:'99',foreign_lots:500,trust_lots:50,dealer_lots:50,net_lots:600}
   ]};
-  const stock2 = {...stock,code:'TEST2',name:'Test 2',analysis:{p_rise_5d:0.7,rise_5d_samples:80}};
+  const stock2 = {...stock,code:'TEST2',name:'Test 2',analysis:{composite_score:70}};
   let layout, config, range, chartTraces, lastRelayout;
   let resizeCount=0;
   const Plotly = {purge(){}, Plots:{resize(){resizeCount++;}}, react(id,traces,l,c){chartTraces=traces;layout=l;config=c;},
@@ -37,11 +37,11 @@ function checkChart(mobile, partial=false) {
     window:{STOCK_DATA:{matches:[stock,stock2],candles:{TEST:bars,TEST2:bars},date:'2026-09-29',built_at:'2026-09-29',min_volume_lots:1500},
       Plotly,addEventListener(){},matchMedia(){return {matches:mobile,addEventListener(){}};}}});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../pages/app.js'),'utf8'), context);
-  assert.equal(get('rows').children[0].children[3].textContent,'#2 · 62.5%');
-  get('sort').value='p_rise_5d';
+  assert.equal(get('rows').children[0].children[3].textContent,'#2 · 62.5');
+  get('sort').value='composite_score';
   context.render();
   assert.equal(get('rows').children[0].children[0].children[0].textContent,'TEST2 Test 2');
-  assert.equal(get('rows').children[0].children[3].textContent,'#1 · 70%');
+  assert.equal(get('rows').children[0].children[3].textContent,'#1 · 70');
   get('sort').value='code';
   context.show(stock);
   assert.equal(config.staticPlot, false);
@@ -125,8 +125,8 @@ function checkChart(mobile, partial=false) {
 checkChart(true,true);
 checkChart(false,false);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), />上漲階段<\/th>/);
-assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), />5日上漲機率<\/th>/);
-assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /value="p_rise_5d">5日上漲機率排名/);
+assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), />綜合指標排名<\/th>/);
+assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /value="composite_score">綜合指標排名/);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /回檔後等待紅 K/);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /actions\/workflows\/daily-pages\.yml/);
 assert.match(fs.readFileSync(path.join(__dirname,'../pages/index.html'),'utf8'), /toggle-pivots[^>]*type="checkbox" checked/);

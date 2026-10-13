@@ -9,7 +9,7 @@ import pandas as pd
 
 from scripts.build_pages import build
 from scripts.screen_tw_pullback import SCREENING
-from src.pages_analysis import analyze_stock, historical_rise_probability
+from src.pages_analysis import analyze_stock, composite_indicator_score
 from src.sr_engine import SREngine, build_summary
 from src.local_data_loader import load_kline
 
@@ -24,8 +24,6 @@ class AnalysisTests(unittest.TestCase):
             result = analyze_stock('unused', '2338')
         self.assertEqual(result['change_pct'], 5.)
         self.assertEqual(result['n_zones'], 0)
-        self.assertAlmostEqual(result['p_rise_5d'], 1 / 60, places=6)
-        self.assertEqual(result['rise_5d_samples'], 60)
         for key in ('p_touch', 'p_hold', 'n_events', 'nearest_distance_atr', 'nearest_support', 'nearest_resistance'):
             self.assertIsNone(result[key])
 
@@ -48,11 +46,18 @@ class AnalysisTests(unittest.TestCase):
             self.assertEqual(actual['nearest_distance_atr'], nearest.get('distance_atr'))
             self.assertEqual(actual['change_pct'], round((closes[-1]/closes[-2]-1)*100, 2))
 
-    def test_historical_five_day_rise_probability(self):
-        frame = pd.DataFrame({'close': [10, 9, 8, 7, 6, 11, 8, 10]})
-        probability, samples = historical_rise_probability(frame, horizon=5)
-        self.assertEqual(samples, 3)
-        self.assertAlmostEqual(probability, 2 / 3, places=6)
+    def test_composite_indicator_score(self):
+        stock = {
+            'bullish_reasons': ['hhhl', 'ma3', 'ma4'],
+            'kd_golden_cross': True, 'macd_red_bar': True, 'histogram_rising': True,
+            'red_k_confirmed': True, 'volume_increased': True,
+            'pullback_volume_contracted': True, 'reclaimed_previous_high': True,
+            'rising_stage': '主升段',
+            'institutional_flows': [
+                {'net_lots': 100}, {'net_lots': -20}, {'net_lots': 50},
+            ],
+        }
+        self.assertEqual(composite_indicator_score(stock, {'p_touch': .8, 'p_hold': .6}), 95.5)
 
 
 class PagesTests(unittest.TestCase):
@@ -85,7 +90,7 @@ class PagesTests(unittest.TestCase):
             with zipfile.ZipFile(path / 'site/downloads/stocks.zip') as bundle:
                 self.assertEqual(json.loads(bundle.read('analysis.json')), [])
                 self.assertIn('p_touch', bundle.read('analysis.csv').decode('utf-8-sig'))
-                self.assertIn('p_rise_5d', bundle.read('analysis.csv').decode('utf-8-sig'))
+                self.assertIn('composite_score', bundle.read('analysis.csv').decode('utf-8-sig'))
             text = (path / 'site/data.js').read_text(encoding='utf-8')
             self.assertNotIn(str(path), text)
             self.assertIn('"matches": []', text)

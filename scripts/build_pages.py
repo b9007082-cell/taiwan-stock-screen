@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 from src.tw_daily_update import DailyUpdater
 from src.tw_intraday_update import IntradayUpdater
 from scripts.screen_tw_pullback import MIN_VOLUME_LOTS, SCREENING
-from src.pages_analysis import analyze_stock
+from src.pages_analysis import analyze_stock, composite_indicator_score
 from src.tw_official_data import institutional_history
 
 
@@ -67,6 +67,7 @@ def build(snapshot, destination):
              'net_lots': round(float(row.total_net) / 1000, 3)}
             for row in rows.itertuples(index=False)
         ]
+        stock['analysis']['composite_score'] = composite_indicator_score(stock, stock['analysis'])
     archive = snapshot / f"tw_stock_{result['date']}_{MIN_VOLUME_LOTS}lots.zip"
     shutil.copy2(archive, downloads / 'stocks.zip')
     confirmed_codes = {s['code'] for s in result['matches']}
@@ -79,7 +80,7 @@ def build(snapshot, destination):
     (downloads / 'analysis.json').write_text(json.dumps(analysis, ensure_ascii=False, allow_nan=False), encoding='utf-8')
     fields = ['code', 'name', 'list_type', 'rising_stage', 'rising_stage_reason',
               'kd_golden_cross', 'macd_red_bar', 'current_price', 'change_pct',
-              'p_rise_5d', 'rise_5d_samples', 'p_touch', 'p_hold', 'n_events', 'trend_label',
+              'composite_score', 'p_touch', 'p_hold', 'n_events', 'trend_label',
               'nearest_distance_atr', 'nearest_support', 'nearest_resistance', 'n_zones', 'error']
     pd.DataFrame(analysis).reindex(columns=fields).to_csv(downloads / 'analysis.csv', index=False, encoding='utf-8-sig')
     with zipfile.ZipFile(downloads / 'stocks.zip', 'a', zipfile.ZIP_DEFLATED) as bundle:
