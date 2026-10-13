@@ -76,10 +76,18 @@ def build(snapshot, destination):
                  'rising_stage': s.get('rising_stage'),
                  'rising_stage_reason': s.get('rising_stage_reason'),
                  'kd_golden_cross': s.get('kd_golden_cross'),
-                 'macd_red_bar': s.get('macd_red_bar'), **s['analysis']} for s in stocks]
+                 'macd_red_bar': s.get('macd_red_bar'),
+                 'above_ma5': s.get('above_ma5'),
+                 'reclaimed_previous_high': s.get('reclaimed_previous_high'),
+                 'entry_volume_met': s.get('entry_volume_met'),
+                 'kd_entry_signal': s.get('kd_entry_signal'),
+                 'macd_entry_signal': s.get('macd_entry_signal'),
+                 **s['analysis']} for s in stocks]
     (downloads / 'analysis.json').write_text(json.dumps(analysis, ensure_ascii=False, allow_nan=False), encoding='utf-8')
     fields = ['code', 'name', 'list_type', 'rising_stage', 'rising_stage_reason',
-              'kd_golden_cross', 'macd_red_bar', 'current_price', 'change_pct',
+              'kd_golden_cross', 'macd_red_bar', 'above_ma5', 'reclaimed_previous_high',
+              'entry_volume_met', 'kd_entry_signal', 'macd_entry_signal',
+              'current_price', 'change_pct',
               'composite_score', 'p_touch', 'p_hold', 'n_events', 'trend_label',
               'nearest_distance_atr', 'nearest_support', 'nearest_resistance', 'n_zones', 'error']
     pd.DataFrame(analysis).reindex(columns=fields).to_csv(downloads / 'analysis.csv', index=False, encoding='utf-8-sig')

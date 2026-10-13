@@ -26,7 +26,7 @@ class PullbackSignalTests(unittest.TestCase):
         closes = list(range(100, 180)) + [176, 173, 172, 173, 174, 177]
         volumes = [2000000] * len(closes)
         volumes[80:85] = [5000000, 1000000, 1000000, 4000000, 2000000]
-        volumes[-1] = 2100000
+        volumes[-1] = 3000000
         return pd.DataFrame({"time": range(len(closes)), "close": closes,
                              "open": [c - 1 for c in closes], "high": [c + 1 for c in closes],
                              "low": [c - 2 for c in closes],
@@ -55,16 +55,44 @@ class PullbackSignalTests(unittest.TestCase):
         self.assertFalse(waiting["is_red_candle"])
         self.assertFalse(waiting["red_k_confirmed"])
 
-    def test_red_candle_volume_must_exceed_previous_bar(self):
+    def test_entry_volume_uses_one_point_five_times_yesterday_or_five_day_average(self):
         frame = self.frame()
-        frame.loc[85, "tick_volume"] = frame.loc[84, "tick_volume"]
+        frame.loc[85, "tick_volume"] = 2000000
         self.assertIsNone(signal(frame))
-        frame.loc[85, "tick_volume"] = frame.loc[84, "tick_volume"] - 1
+        frame.loc[85, "tick_volume"] = 2600000
         self.assertIsNone(signal(frame))
-        frame.loc[85, "tick_volume"] = frame.loc[84, "tick_volume"] + 1
+        frame.loc[85, "tick_volume"] = 3000000
         result = signal(frame)
         self.assertIsNotNone(result)
-        self.assertTrue(result["volume_increased"])
+        self.assertTrue(result["entry_volume_met"])
+        # Five-day average is based on five completed bars, excluding today.
+        frame.loc[80, "tick_volume"] = 6000000
+        frame.loc[84, "tick_volume"] = 3500000
+        frame.loc[85, "tick_volume"] = 3400000
+        result = signal(frame)
+        self.assertIsNotNone(result)
+        self.assertFalse(result["volume_increased"])
+        self.assertTrue(result["entry_volume_met"])
+
+    def test_entry_requires_previous_high_and_kd_or_macd(self):
+        frame = self.frame()
+        frame.loc[84, "high"] = frame.loc[85, "close"]
+        self.assertIsNone(signal(frame))
+        frame = self.frame()
+        frame.loc[83, ['close', 'high']] = [190, 191]
+        waiting = signal(frame, require_stabilization=False)
+        self.assertIsNotNone(waiting)
+        self.assertFalse(waiting['above_ma5'])
+        self.assertIsNone(signal(frame))
+        frame = self.frame()
+        original = technical_indicators(frame)
+        with patch('scripts.screen_tw_pullback.technical_indicators', return_value={
+                **original, 'kd_entry_signal': False, 'macd_entry_signal': False}):
+            self.assertIsNone(signal(frame))
+        for active in ('kd_entry_signal', 'macd_entry_signal'):
+            indicators = {**original, 'kd_entry_signal': False, 'macd_entry_signal': False, active: True}
+            with self.subTest(active=active), patch('scripts.screen_tw_pullback.technical_indicators', return_value=indicators):
+                self.assertIsNotNone(signal(frame))
 
     def test_structure_branch_does_not_require_ma_slope(self):
         frame = self.frame()
@@ -110,12 +138,24 @@ class TechnicalIndicatorTests(unittest.TestCase):
     def test_kd_533_golden_cross(self):
         result = technical_indicators(self.frame([10] * 20 + [9, 8, 7, 8, 10]))
         self.assertTrue(result["kd_golden_cross"])
+        self.assertTrue(result["kd_entry_signal"])
         self.assertGreater(result["kd_k"], result["kd_d"])
 
     def test_macd_6_13_9_red_bar(self):
         result = technical_indicators(self.frame([10] * 20 + [11, 12, 13]))
         self.assertTrue(result["macd_red_bar"])
+        self.assertTrue(result["macd_red_growing"])
+        self.assertTrue(result["macd_entry_signal"])
         self.assertGreater(result["histogram"], 0)
+
+    def test_macd_green_shrinks_or_turns_red(self):
+        shrinking = technical_indicators(self.frame([10] * 20 + [12, 11, 10, 9, 10]))
+        self.assertTrue(shrinking['macd_green_shrinking'])
+        self.assertFalse(shrinking['macd_red_bar'])
+        self.assertTrue(shrinking['macd_entry_signal'])
+        turning = technical_indicators(self.frame([10] * 20 + [12, 11, 10, 9, 12]))
+        self.assertTrue(turning['macd_green_to_red'])
+        self.assertTrue(turning['macd_entry_signal'])
 
     def test_latest_price_must_be_strictly_above_ma20(self):
         self.assertFalse(above_ma20(pd.Series([20.] * 20 + [10., 11., 12.])))
@@ -213,14 +253,14 @@ class OfficialDataTests(unittest.TestCase):
     @patch('scripts.screen_tw_pullback.swing_structure', return_value={'highs': [], 'lows': []})
     def test_snapshot_threshold_history_and_archive(self, structure):
         rows = [{"code": c, "name": c, "market": m} for c, m in [("2330", "listed"), ("8069", "otc"), ("1101", "listed")]]
-        closes = list(range(100, 180)) + [182, 179, 176, 174, 173, 177]
+        closes = list(range(100, 180)) + [176, 173, 172, 173, 174, 177]
         history = pd.concat([pd.DataFrame({
             **r, "time": (pd.date_range(end="2026-09-14", periods=len(closes)) - pd.Timestamp("1970-01-01")) // pd.Timedelta(seconds=1),
             "open": [c - 1 for c in closes], "high": [c + 1 for c in closes],
             "low": [c - 2 for c in closes], "close": closes,
             "tick_volume": ([1499999] * len(closes) if r["code"] == "1101"
                             else [2000000] * (len(closes) - 6)
-                            + [3000000, 2600000, 2300000, 2000000, 1500000, 1600000]),
+                            + [5000000, 1000000, 1000000, 4000000, 2000000, 3000000]),
         }) for r in rows], ignore_index=True)
         latest = history.groupby("code").tail(1)
         with tempfile.TemporaryDirectory() as tmp, \
@@ -422,8 +462,12 @@ class IntradayUpdateTests(unittest.TestCase):
         }])
         metrics = {"bullish_reasons": ["ma3"], "structure": None,
                    "kd_k": 55., "kd_d": 50., "kd_golden_cross": True, "macd_red_bar": True,
-                   "above_ma20": True,
+                   "kd_rising": True, "kd_bullish": True, "kd_entry_signal": True,
+                   "macd_red_growing": True, "macd_green_shrinking": False,
+                   "macd_green_to_red": False, "macd_entry_signal": True,
+                   "above_ma20": True, "above_ma5": True,
                    "volume_increased": True, "is_red_candle": True,
+                   "entry_volume_met": True, "prior_volume5_lots": 1400.,
                    "red_k_confirmed": True,
                    "pullback_volume_contracted": True,
                    "rising_stage": "主升段", "rising_stage_reason": "test",
@@ -450,6 +494,9 @@ class IntradayUpdateTests(unittest.TestCase):
             self.assertTrue(published["kd_golden_cross"])
             self.assertTrue(published["macd_red_bar"])
             self.assertTrue(published["volume_increased"])
+            self.assertTrue(published["entry_volume_met"])
+            self.assertTrue(published["kd_entry_signal"])
+            self.assertTrue(published["macd_entry_signal"])
             self.assertTrue(published["pullback_volume_contracted"])
             self.assertEqual(published["rising_stage"], "主升段")
             self.assertEqual(published["intraday_bar"], {

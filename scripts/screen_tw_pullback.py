@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.fetch_tw_stock_data import fetch_all_symbols
 from src.tw_official_data import latest_reports, selected_history
 
-SCREENING = "bull_pullback_or_ma_v10"
+SCREENING = "bull_pullback_or_ma_v11_photo_entry"
 MIN_VOLUME_LOTS = 1500
 MIN_VOLUME_SHARES = MIN_VOLUME_LOTS * 1000
 CRITERIA = {
@@ -21,11 +21,11 @@ CRITERIA = {
     "trend": "The latest close (current price for intraday) must be strictly above its SMA20, plus ANY of: higher highs and higher lows; SMA5 > SMA10 > SMA20; SMA5 > SMA10 > SMA20 > SMA60. No additional MA slope gate.",
     "pullback": "previous close 3-15% below previous 10-bar high; >=2 declines in previous 5 bars",
     "pullback_volume": "In the previous 5 sessions, average down-session volume must be lower than average up-session volume and the five-session volume slope must be negative",
-    "candle": "close > open and previous close; low >= 99% of previous low; close position >=0.4; current volume > previous-bar volume",
+    "candle": "close > open and previous close; low >= 99% of previous low; close position >=0.4; close > SMA5 and previous high; volume >= 1.5 times previous day OR > prior five-day average; at least one KD or MACD entry signal",
     "waiting": "Meets trend, MA20, pullback, pullback-volume and liquidity rules, and the latest close is not above the latest open",
     "minimum_bars": 65,
     "min_volume_lots": MIN_VOLUME_LOTS,
-    "display_indicators": "KD(5,3,3) golden cross; MACD(6,13,9) positive histogram",
+    "entry_indicators": "KD(5,3,3): K rising OR K > D OR golden cross; MACD(6,13,9): positive histogram growing OR negative histogram shrinking OR negative-to-positive; at least one group must qualify",
 }
 
 
@@ -67,7 +67,7 @@ def bullish_reasons(structure, averages):
 
 
 def technical_indicators(frame):
-    """Return the latest KD(5,3,3) and MACD(6,13,9) display signals."""
+    """Return KD(5,3,3) and MACD(6,13,9) entry signals."""
     df = frame.sort_values("time").drop_duplicates("time", keep="last").copy()
     low5 = df.low.rolling(5).min()
     high5 = df.high.rolling(5).max()
@@ -86,15 +86,28 @@ def technical_indicators(frame):
     dif = close.ewm(span=6, adjust=False).mean() - close.ewm(span=13, adjust=False).mean()
     macd = dif.ewm(span=9, adjust=False).mean()
     histogram = dif - macd
+    kd_rising = bool(k_values[-1] > k_values[-2])
+    kd_bullish = bool(k_values[-1] > d_values[-1])
+    kd_golden_cross = bool(kd_bullish and k_values[-2] <= d_values[-2])
+    macd_red_growing = bool(histogram.iloc[-1] > 0 and histogram.iloc[-1] > histogram.iloc[-2])
+    macd_green_shrinking = bool(histogram.iloc[-1] < 0 and histogram.iloc[-1] > histogram.iloc[-2])
+    macd_green_to_red = bool(histogram.iloc[-2] < 0 and histogram.iloc[-1] > 0)
     return {
         "kd_k": round(k_values[-1], 3),
         "kd_d": round(d_values[-1], 3),
-        "kd_golden_cross": bool(k_values[-1] > d_values[-1] and k_values[-2] <= d_values[-2]),
+        "kd_rising": kd_rising,
+        "kd_bullish": kd_bullish,
+        "kd_golden_cross": kd_golden_cross,
+        "kd_entry_signal": bool(kd_rising or kd_bullish or kd_golden_cross),
         "dif": round(float(dif.iloc[-1]), 3),
         "macd": round(float(macd.iloc[-1]), 3),
         "histogram": round(float(histogram.iloc[-1]), 3),
         "histogram_rising": bool(histogram.iloc[-1] > histogram.iloc[-2]),
         "macd_red_bar": bool(histogram.iloc[-1] > 0),
+        "macd_red_growing": macd_red_growing,
+        "macd_green_shrinking": macd_green_shrinking,
+        "macd_green_to_red": macd_green_to_red,
+        "macd_entry_signal": bool(macd_red_growing or macd_green_shrinking or macd_green_to_red),
     }
 
 
@@ -157,17 +170,23 @@ def signal(frame, require_stabilization=True):
     position = (today.close - today.low) / span if span > 0 else 0
     pullback_volume_shrinking = pullback_volume_contracted(df)
     volume_increased = bool(today.tick_volume > yesterday.tick_volume)
-    stabilization = (today.close > today.open and today.close > yesterday.close
-                     and today.low >= yesterday.low * 0.99 and position >= 0.4
-                     and volume_increased)
+    prior_volume5 = float(df.tick_volume.iloc[-6:-1].mean())
+    entry_volume_met = bool(today.tick_volume >= yesterday.tick_volume * 1.5
+                            or today.tick_volume > prior_volume5)
     above_monthly = above_ma20(close)
     if not (reasons and above_monthly and pullback_volume_shrinking
             and 3 <= pullback <= 15 and declining >= 2):
         return None
-    if require_stabilization and not stabilization:
-        return None
     indicators = technical_indicators(df)
     averages = {n: float(ma[n].iloc[-1]) for n in ma}
+    above_ma5 = bool(today.close > averages[5])
+    reclaimed_previous_high = bool(today.close > yesterday.high)
+    stabilization = bool(today.close > today.open and today.close > yesterday.close
+                         and today.low >= yesterday.low * 0.99 and position >= 0.4
+                         and above_ma5 and reclaimed_previous_high and entry_volume_met
+                         and (indicators["kd_entry_signal"] or indicators["macd_entry_signal"]))
+    if require_stabilization and not stabilization:
+        return None
     rising_stage, rising_stage_reason = classify_rising_stage(close, averages, ma[20], indicators)
     volume5 = df.tick_volume.tail(5).mean() / 1000
     volume10 = df.tick_volume.tail(10).mean() / 1000
@@ -180,17 +199,19 @@ def signal(frame, require_stabilization=True):
         "volume_lots": float(today.tick_volume / 1000),
         "previous_volume_lots": float(yesterday.tick_volume / 1000),
         "volume_increased": volume_increased, "pullback_pct": round(pullback, 2),
+        "entry_volume_met": entry_volume_met, "prior_volume5_lots": round(prior_volume5 / 1000, 2),
         "is_red_candle": bool(today.close > today.open),
         "red_k_confirmed": bool(stabilization),
         "pullback_volume_contracted": pullback_volume_shrinking,
         "prior_declining_days": declining, "close_position": round(position, 3),
         "ma": {str(n): round(float(ma[n].iloc[-1]), 3) for n in ma},
         "above_ma20": above_monthly,
+        "above_ma5": above_ma5,
         "rising_stage": rising_stage, "rising_stage_reason": rising_stage_reason,
         **indicators,
         "volume5_lots": round(float(volume5), 2), "volume10_lots": round(float(volume10), 2),
         "prior_peak": peak, "pullback_low": float(df.low.tail(6).min()),
-        "reclaimed_previous_high": bool(today.close > yesterday.high),
+        "reclaimed_previous_high": reclaimed_previous_high,
         "data_bars": len(df),
     }
 
@@ -203,8 +224,9 @@ def write_report(result, path):
              "- 結構分支：最近 60 根日 K，以左右各 2 根確認波段；最近兩個高點與低點均嚴格提高，最新波段低點未再跌破。不另要求均線斜率。",
              "- 回檔：前一日收盤相對此前 10 日最高價回落 3% 至 15%，此前 5 日至少 2 日收盤下跌。",
              "- 回檔量縮：止跌紅 K 前 5 日中的收跌日平均量必須低於收漲日平均量，且 5 日成交量整體斜率向下。",
-             "- 紅 K 回升觀察：收盤 > 開盤及前日收盤，最低價不低於昨低的 99%，收盤位置至少為當日振幅的 40%，且成交量嚴格大於前一根 K 棒。",
-             "- 至少 65 根有效日 K；多頭三項以 OR 判斷，回檔與紅 K 條件仍須同時滿足。", "",
+             "- 止跌紅 K：收盤 > 開盤、昨收、當日 MA5 與昨高，且高於當日 MA20；最低價不低於昨低的 99%，收盤位置至少為當日振幅的 40%。",
+             "- 今日成交量 ≥ 昨量 1.5 倍，或 > 前五個完整交易日均量；KD(5,3,3) 的 K 上升／K>D／黃金交叉，或 MACD(6,13,9) 的紅柱增長／綠柱縮短／綠轉紅，至少符合其中一項。",
+             "- 至少 65 根有效日 K、當日量至少 1,500 張；多頭分支擇一，照片中的價格、量能及動能條件同時滿足。", "",
              "## 候選名單", "", "| 股票 | 收盤 | 成交量（張） | 紅K低點 | 已收復昨高 |",
              "|---|---:|---:|---:|---|"]
     for r in result["matches"]:
