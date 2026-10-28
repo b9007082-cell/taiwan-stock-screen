@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.fetch_tw_stock_data import fetch_all_symbols
 from src.tw_official_data import latest_reports, selected_history
 
-SCREENING = "bull_pullback_or_ma_v12_four_screens"
+SCREENING = "bull_pullback_or_ma_v13_institutional_combo"
 MIN_VOLUME_LOTS = 1500
 MIN_VOLUME_SHARES = MIN_VOLUME_LOTS * 1000
 CRITERIA = {
@@ -28,6 +28,7 @@ CRITERIA = {
     "entry_indicators": "KD(5,3,3): K rising OR K > D OR golden cross; MACD(6,13,9): positive histogram growing OR negative histogram shrinking OR negative-to-positive; at least one group must qualify",
     "bull_confirmation": "Two rising confirmed swing lows; red close crosses above latest confirmed swing high from yesterday; SMA5/10/20 each rising; above SMA20; entry volume and KD/MACD gate",
     "consolidation_breakout": "Prior 10 complete bars within 12% range and SMA20 rising; solid red body >= 50% of range; close above prior 10-bar high and SMA20; entry volume and KD/MACD gate",
+    "kd_macd_institutional": "KD(5,3,3) golden cross AND MACD(6,13,9) histogram either strictly changes from negative to positive OR a positive histogram grows versus the prior bar; official TWSE/TPEx three-institution net buying > 0 on the same completed day (previous completed day during intraday). This is not broker-level major-player buying.",
 }
 
 
@@ -182,7 +183,7 @@ def signal(frame, require_stabilization=True, screen="pullback"):
     entry_volume_met = bool(today.tick_volume >= yesterday.tick_volume * 1.5
                             or today.tick_volume > prior_volume5)
     above_monthly = above_ma20(close)
-    if screen not in ("pullback", "bull_confirmation", "consolidation_breakout"):
+    if screen not in ("pullback", "bull_confirmation", "consolidation_breakout", "kd_macd_combo"):
         raise ValueError(f"Unknown screen: {screen}")
     indicators = technical_indicators(df)
     averages = {n: float(ma[n].iloc[-1]) for n in ma}
@@ -215,11 +216,15 @@ def signal(frame, require_stabilization=True, screen="pullback"):
     solid_red = bool(span > 0 and today.close > today.open and (today.close - today.open) / span >= 0.5)
     breakout = bool(consolidation and solid_red and today.close > neckline and above_monthly
                     and momentum_and_volume)
+    kd_macd_combo = bool(indicators["kd_golden_cross"] and
+                         (indicators["macd_green_to_red"] or indicators["macd_red_growing"]))
     if screen == "pullback" and (not pullback_ready or (require_stabilization and not stabilization)):
         return None
     if screen == "bull_confirmation" and not bull_confirmed:
         return None
     if screen == "consolidation_breakout" and not breakout:
+        return None
+    if screen == "kd_macd_combo" and not kd_macd_combo:
         return None
     if screen == "bull_confirmation":
         reasons = list(dict.fromkeys([*reasons, 'higher_lows']))
@@ -251,6 +256,7 @@ def signal(frame, require_stabilization=True, screen="pullback"):
         "prior_peak": peak, "pullback_low": float(df.low.tail(6).min()),
         "reclaimed_previous_high": reclaimed_previous_high,
         "bull_confirmation": bull_confirmed, "consolidation_breakout": breakout,
+        "kd_macd_combo": kd_macd_combo,
         "prior_swing_high": prior_swing_high, "higher_lows": higher_lows,
         "ma5_10_20_rising": ma_rising, "neckline": neckline,
         "consolidation_width_pct": round(box_width * 100, 2), "solid_red": solid_red,

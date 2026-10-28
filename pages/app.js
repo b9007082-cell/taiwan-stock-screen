@@ -50,7 +50,7 @@ let activeView = 'confirmed';
 let visibleBars = 0;
 let showPivots = true;
 let showTurns = true;
-const views = {confirmed:['matches','止跌紅 K'],waiting:['waiting_matches','回檔後等待紅 K'],'bull-confirmation':['bull_confirmation_matches','多頭確認'],'consolidation-breakout':['consolidation_breakout_matches','盤整突破']};
+const views = {confirmed:['matches','止跌紅 K'],waiting:['waiting_matches','回檔後等待紅 K'],'bull-confirmation':['bull_confirmation_matches','多頭確認'],'consolidation-breakout':['consolidation_breakout_matches','盤整突破'],'kd-macd-institutional':['kd_macd_institutional_matches','KD＋MACD＋法人買超']};
 const currentStocks = () => data?.[views[activeView][0]] || [];
 function zoomChart(action) {
   if (!window.Plotly || !selected) return;
@@ -141,6 +141,12 @@ function show(stock) {
     ['前五日均量',stock.prior_volume5_lots == null ? '—' : `${number(stock.prior_volume5_lots)} 張`],
     ['KD 進場訊號',yesNo(stock.kd_entry_signal)],
     ['MACD 進場訊號',yesNo(stock.macd_entry_signal)]
+  );
+  if(activeView==='kd-macd-institutional') details.push(
+    ['MACD 綠柱轉紅柱',yesNo(stock.macd_green_to_red)],
+    ['MACD 紅柱增長',yesNo(stock.macd_red_growing)],
+    ['三大法人淨買超',stock.institutional_buy_lots == null ? '—' : `+${number(stock.institutional_buy_lots)} 張`],
+    ['法人資料日期',stock.institutional_buy_as_of || '—']
   );
   for (const [label, value] of details) {
     const item=document.createElement('div'), term=document.createElement('dt'), desc=document.createElement('dd');
@@ -265,6 +271,7 @@ else {
   const waiting=data.waiting_matches || [];
   const bull=data.bull_confirmation_matches || [];
   const breakout=data.consolidation_breakout_matches || [];
+  const institutional=data.kd_macd_institutional_matches || [];
   $('date').textContent=data.date;
   $('current-price-heading').textContent='現價';
   $('current-price-heading').title=data.is_intraday?'證交所／櫃買中心盤中最新價，收盤前仍會變動':'資料日收盤價';
@@ -272,12 +279,14 @@ else {
   $('waiting-count').textContent=`${waiting.length} 檔`;
   $('bull-confirmation-count').textContent=`${bull.length} 檔`;
   $('consolidation-breakout-count').textContent=`${breakout.length} 檔`;
+  $('kd-macd-institutional-count').textContent=`${institutional.length} 檔`;
   const age=Math.floor((Date.now()-new Date(`${data.date}T00:00:00+08:00`).getTime())/86400000);
   const asOf=data.as_of?new Date(data.as_of).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'}):'';
   const coverage=data.snapshot_universe!=null&&data.universe_size!=null?` · 有效快照 ${data.snapshot_universe}/${data.universe_size} 檔`:'';
+  const institutionalNote=data.institutional_screen_status==='unavailable'?' · 法人報表未取得，新分頁不列入未證實股票。':'';
   $('status').textContent=data.is_intraday
-    ? `盤中暫定（截至 ${asOf}）${coverage} · 累積量達 ${volumeThresholdText()} 張 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · 多頭確認 ${bull.length} 檔 · 盤整突破 ${breakout.length} 檔 · 13:30 收盤前條件仍可能改變。`
-    : `成交量達標 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · 多頭確認 ${bull.length} 檔 · 盤整突破 ${breakout.length} 檔 · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
+    ? `盤中暫定（截至 ${asOf}）${coverage} · 累積量達 ${volumeThresholdText()} 張 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · 多頭確認 ${bull.length} 檔 · 盤整突破 ${breakout.length} 檔 · KD＋MACD＋法人買超 ${institutional.length} 檔（法人資料 ${data.institutional_screen_as_of || '未取得'}）${institutionalNote} · 13:30 收盤前條件仍可能改變。`
+    : `成交量達標 ${data.liquid_universe} 檔 · 止跌紅 K ${data.matches.length} 檔 · 等待紅 K ${waiting.length} 檔 · 多頭確認 ${bull.length} 檔 · 盤整突破 ${breakout.length} 檔 · KD＋MACD＋法人買超 ${institutional.length} 檔${institutionalNote} · ${age>=4?'資料日距今 '+age+' 天，可能為休市或更新未完成，請核對更新紀錄。':'以標示的完整交易日行情為準。'}`;
   if(data.is_intraday) $('analysis-note').textContent=`本頁為盤中暫定篩選結果；成交量門檻固定為累積 ${volumeThresholdText()} 張。圖表最右側「盤中暫時 K」與「盤中暫時量」使用證交所 MIS 的開、高、低、最新價及當下累積成交量，收盤前仍會變動；量 MA5／MA10 只計算完整日成交量。三大法人買賣超採證交所／櫃買中心盤後資料，買超為紅柱、賣超為綠柱；綠線為顯示區間內的累計買賣超，採獨立隱藏刻度呈現方向與變化。盤中不會產生暫時法人柱。頭、底與轉折採 line-lab 的左右波段確認方式，可分別顯示或隱藏；暫時 K 尚未形成已確認轉折。支撐壓力與機率仍以最近完整收盤資料計算。`;
   $('built').textContent=`網頁產生時間 ${new Date(data.built_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'})}（台灣）`;
   for(const id of ['search','market','sort']) $(id).addEventListener(id==='search'?'input':'change',render);

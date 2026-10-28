@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from scripts.build_pages import build
+from scripts.build_pages import apply_institutional_buy_filter, build
 from scripts.screen_tw_pullback import SCREENING
 from src.pages_analysis import analyze_stock, composite_indicator_score
 from src.sr_engine import SREngine, build_summary
@@ -61,6 +61,66 @@ class AnalysisTests(unittest.TestCase):
 
 
 class PagesTests(unittest.TestCase):
+    def test_institutional_filter_requires_positive_exact_day(self):
+        candidates = [
+            {'code': '2338', 'market': 'listed', 'kd_golden_cross': True},
+            {'code': '2339', 'market': 'listed', 'kd_golden_cross': True},
+        ]
+        result = {'date': '2026-09-24', 'kd_macd_combo_candidates': candidates}
+        report = pd.DataFrame([
+            {'date': pd.Timestamp('2026-09-24').date(), 'code': '2338',
+             'market': 'listed', 'total_net': 120000},
+            {'date': pd.Timestamp('2026-09-24').date(), 'code': '2339',
+             'market': 'listed', 'total_net': -10000},
+        ])
+        with patch('scripts.build_pages.institutional_daily_report', return_value=report):
+            apply_institutional_buy_filter(result, {})
+        self.assertNotIn('kd_macd_combo_candidates', result)
+        self.assertEqual([row['code'] for row in result['kd_macd_institutional_matches']], ['2338'])
+        self.assertEqual(result['kd_macd_institutional_matches'][0]['institutional_buy_lots'], 120)
+        self.assertEqual(result['institutional_screen_status'], 'available')
+
+    def test_intraday_filter_uses_previous_completed_day_and_fails_closed(self):
+        result = {'date': '2026-09-25', 'is_intraday': True,
+                  'kd_macd_combo_candidates': [{'code': '2338', 'market': 'listed'}]}
+        with patch('scripts.build_pages.institutional_daily_report', return_value=pd.DataFrame()) as fetch:
+            apply_institutional_buy_filter(result, {'history_end': '2026-09-24'})
+        self.assertEqual(fetch.call_args.args[1], pd.Timestamp('2026-09-24').date())
+        self.assertEqual(result['institutional_screen_as_of'], '2026-09-24')
+        self.assertEqual(result['kd_macd_institutional_matches'], [])
+        self.assertEqual(result['institutional_screen_status'], 'unavailable')
+
+    def test_new_screen_only_publishes_verified_institutional_buyers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            self.snapshot(path, [])
+            result_path = path / 'screening_results.json'
+            result = json.loads(result_path.read_text(encoding='utf-8'))
+            result['kd_macd_combo_candidates'] = [
+                {'code': '2338', 'name': '買超股', 'market': 'listed'},
+                {'code': '2339', 'name': '賣超股', 'market': 'listed'},
+            ]
+            result_path.write_text(json.dumps(result), encoding='utf-8')
+            pd.DataFrame([{'time': 1790208000, 'open': 46.3, 'high': 47.45,
+                           'low': 46.05, 'close': 47.1, 'tick_volume': 4013030}]).to_parquet(
+                               path / '2338_D1.parquet')
+            (path / '2338_D1.csv').write_text('date,close\n2026-09-24,47.1', encoding='utf-8')
+            report = pd.DataFrame([
+                {'date': pd.Timestamp('2026-09-24').date(), 'code': '2338', 'total_net': 120000},
+                {'date': pd.Timestamp('2026-09-24').date(), 'code': '2339', 'total_net': -10000},
+            ])
+            empty_flows = pd.DataFrame(columns=['code', 'date', 'foreign_net', 'trust_net',
+                                                'dealer_net', 'total_net'])
+            with patch('scripts.build_pages.institutional_daily_report', return_value=report), \
+                 patch('scripts.build_pages.institutional_history', return_value=empty_flows):
+                build(path, path / 'site')
+            payload = (path / 'site/data.js').read_text(encoding='utf-8')
+            self.assertIn('"institutional_buy_lots": 120.0', payload)
+            self.assertIn('"institutional_buy_as_of": "2026-09-24"', payload)
+            self.assertNotIn('賣超股', payload)
+            analysis = json.loads((path / 'site/downloads/analysis.json').read_text(encoding='utf-8'))
+            self.assertEqual(analysis[0]['list_type'], 'kd_macd_institutional')
+
     def test_intraday_workflow_retries_transient_failures(self):
         workflow = (Path(__file__).resolve().parents[1] / '.github' / 'workflows' / 'daily-pages.yml').read_text(encoding='utf-8')
         self.assertEqual(workflow.count('for attempt in 1 2 3'), 2)

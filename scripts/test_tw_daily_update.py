@@ -120,6 +120,24 @@ class PullbackSignalTests(unittest.TestCase):
 
 
 class NewScreenSignalTests(unittest.TestCase):
+    def test_kd_golden_cross_and_macd_turn_or_growing_red(self):
+        frame = PullbackSignalTests().frame()
+        base = technical_indicators(frame)
+        for golden, green_to_red, red_growing, expected in (
+            (True, True, False, True),
+            (True, False, True, True),
+            (True, False, False, False),
+            (False, True, True, False),
+        ):
+            with self.subTest(golden=golden, green_to_red=green_to_red,
+                              red_growing=red_growing):
+                values = {**base, 'kd_golden_cross': golden,
+                          'macd_green_to_red': green_to_red,
+                          'macd_red_growing': red_growing}
+                with patch('scripts.screen_tw_pullback.technical_indicators', return_value=values):
+                    result = signal(frame, screen='kd_macd_combo')
+                self.assertEqual(result is not None, expected)
+
     def test_bull_confirmation_breaks_confirmed_high_with_rising_lows(self):
         frame = PullbackSignalTests().frame()
         pivots = [

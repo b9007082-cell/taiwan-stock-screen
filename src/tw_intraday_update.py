@@ -155,6 +155,7 @@ class IntradayUpdater:
         folder.mkdir(parents=True)
         matches, waiting_matches, selected, errors = [], [], [], list(history_errors)
         bull_confirmation_matches, consolidation_breakout_matches = [], []
+        kd_macd_combo_candidates = []
         groups = history.groupby(["code", "market"]) if not history.empty else None
         current_time = int((pd.Timestamp(quote_day) - pd.Timestamp("1970-01-01")).total_seconds())
         self.update(stage=f"執行 {MIN_VOLUME_LOTS:,} 張盤中篩選", done=0)
@@ -177,7 +178,8 @@ class IntradayUpdater:
             metrics = signal(combined, require_stabilization=False)
             bull = signal(combined, screen="bull_confirmation")
             breakout = signal(combined, screen="consolidation_breakout")
-            if not (metrics or bull or breakout):
+            cross = signal(combined, screen="kd_macd_combo")
+            if not (metrics or bull or breakout or cross):
                 continue
             intraday_bar = {
                 "date": str(quote_day), "as_of": item["quote_time"].isoformat(),
@@ -197,7 +199,9 @@ class IntradayUpdater:
                 bull_confirmation_matches.append(public(bull))
             if breakout is not None:
                 consolidation_breakout_matches.append(public(breakout))
-            if not (bull or breakout or (metrics and (metrics["red_k_confirmed"] or not metrics["is_red_candle"]))):
+            if cross is not None:
+                kd_macd_combo_candidates.append(public(cross))
+            if not (bull or breakout or cross or (metrics and (metrics["red_k_confirmed"] or not metrics["is_red_candle"]))):
                 continue
             closed.to_parquet(folder / f"{code}_D1.parquet", index=False)
             export = closed.copy()
@@ -210,6 +214,7 @@ class IntradayUpdater:
         waiting_matches.sort(key=lambda r: r["code"])
         bull_confirmation_matches.sort(key=lambda r: r["code"])
         consolidation_breakout_matches.sort(key=lambda r: r["code"])
+        kd_macd_combo_candidates.sort(key=lambda r: r["code"])
         _write_csv(folder / "tw_stock_symbols.csv", selected,
                    ["code", "name", "market", "last_date", "volume_lots"])
         _write_csv(folder / "fetch_errors.csv", errors, ["code", "reason"])
@@ -221,7 +226,8 @@ class IntradayUpdater:
             "liquid_universe": len(liquid), "red_candidates": len(red_candidates),
             "matches": matches, "waiting_matches": waiting_matches,
             "bull_confirmation_matches": bull_confirmation_matches,
-            "consolidation_breakout_matches": consolidation_breakout_matches, "criteria": CRITERIA,
+            "consolidation_breakout_matches": consolidation_breakout_matches,
+            "kd_macd_combo_candidates": kd_macd_combo_candidates, "criteria": CRITERIA,
         }
         (folder / "screening_results.json").write_text(
             json.dumps(result, ensure_ascii=False), encoding="utf-8")

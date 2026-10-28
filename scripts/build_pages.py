@@ -5,7 +5,7 @@ import shutil
 import sys
 import tempfile
 import zipfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -16,7 +16,59 @@ from src.tw_daily_update import DailyUpdater
 from src.tw_intraday_update import IntradayUpdater
 from scripts.screen_tw_pullback import MIN_VOLUME_LOTS, SCREENING
 from src.pages_analysis import analyze_stock, composite_indicator_score
-from src.tw_official_data import institutional_history
+from src.tw_official_data import institutional_daily_report, institutional_history
+
+
+def apply_institutional_buy_filter(result, source):
+    """Keep only KD/MACD candidates with verified official net buying.
+
+    Today's institutional flows do not exist at noon. Intraday signals use the
+    last completed session, explicitly recording that session's date. A missing
+    or unavailable report never counts as a buy.
+    """
+    candidates = result.pop('kd_macd_combo_candidates', [])
+    result['kd_macd_institutional_matches'] = []
+    if not candidates:
+        result['institutional_screen_status'] = 'no_technical_candidates'
+        return
+    as_of_text = source.get('history_end') if result.get('is_intraday') else result['date']
+    if not as_of_text:
+        result['institutional_screen_status'] = 'unavailable'
+        return
+    try:
+        as_of = date.fromisoformat(as_of_text)
+    except (TypeError, ValueError):
+        result['institutional_screen_status'] = 'unavailable'
+        return
+    result['institutional_screen_as_of'] = str(as_of)
+    reports, unavailable = {}, []
+    required = {'code', 'date', 'total_net'}
+    for market in sorted({item['market'] for item in candidates}):
+        try:
+            report = institutional_daily_report(market, as_of)
+            if report.empty or not required.issubset(report.columns):
+                unavailable.append(market)
+            else:
+                reports[market] = report
+        except (OSError, ValueError, TypeError, KeyError):
+            unavailable.append(market)
+    for candidate in candidates:
+        report = reports.get(candidate['market'])
+        if report is None:
+            continue
+        rows = report[(report.code == candidate['code']) & (report.date == as_of)]
+        if len(rows) != 1:
+            continue
+        net_shares = float(rows.iloc[0].total_net)
+        if net_shares > 0:
+            result['kd_macd_institutional_matches'].append({
+                **candidate, 'institutional_buy_lots': round(net_shares / 1000, 3),
+                'institutional_buy_as_of': str(as_of),
+            })
+    result['institutional_screen_status'] = (
+        'unavailable' if not reports else
+        'partial' if unavailable else 'available'
+    )
 
 
 def build(snapshot, destination):
@@ -25,6 +77,7 @@ def build(snapshot, destination):
     if result['screening'] != SCREENING:
         raise ValueError('Snapshot screening version is outdated')
     source = json.loads((snapshot / 'source.json').read_text(encoding='utf-8'))
+    apply_institutional_buy_filter(result, source)
     destination.mkdir(parents=True, exist_ok=True)
     for asset in (ROOT / 'pages').iterdir():
         if asset.is_file():
@@ -34,7 +87,8 @@ def build(snapshot, destination):
     downloads = destination / 'downloads'
     downloads.mkdir(exist_ok=True)
     candles = {}
-    screen_keys = ('matches', 'waiting_matches', 'bull_confirmation_matches', 'consolidation_breakout_matches')
+    screen_keys = ('matches', 'waiting_matches', 'bull_confirmation_matches',
+                   'consolidation_breakout_matches', 'kd_macd_institutional_matches')
     stocks = [stock for key in screen_keys for stock in result.get(key, [])]
     unique_stocks = list({stock['code']: stock for stock in stocks}.values())
     stock_analysis = {}
@@ -83,8 +137,11 @@ def build(snapshot, destination):
                  'list_type': ('confirmed' if s['code'] in confirmed_codes else
                                'waiting' if 'waiting_matches' in list_types[s['code']] else
                                'bull_confirmation' if 'bull_confirmation_matches' in list_types[s['code']] else
-                               'consolidation_breakout'),
+                               'consolidation_breakout' if 'consolidation_breakout_matches' in list_types[s['code']] else
+                               'kd_macd_institutional'),
                  'all_lists': list_types[s['code']],
+                 'institutional_buy_lots': s.get('institutional_buy_lots'),
+                 'institutional_buy_as_of': s.get('institutional_buy_as_of'),
                  'rising_stage': s.get('rising_stage'),
                  'rising_stage_reason': s.get('rising_stage_reason'),
                  'kd_golden_cross': s.get('kd_golden_cross'),
@@ -96,7 +153,8 @@ def build(snapshot, destination):
                  'macd_entry_signal': s.get('macd_entry_signal'),
                  **s['analysis']} for s in unique_stocks]
     (downloads / 'analysis.json').write_text(json.dumps(analysis, ensure_ascii=False, allow_nan=False), encoding='utf-8')
-    fields = ['code', 'name', 'list_type', 'rising_stage', 'rising_stage_reason',
+    fields = ['code', 'name', 'list_type', 'institutional_buy_lots', 'institutional_buy_as_of',
+              'rising_stage', 'rising_stage_reason',
               'kd_golden_cross', 'macd_red_bar', 'above_ma5', 'reclaimed_previous_high',
               'entry_volume_met', 'kd_entry_signal', 'macd_entry_signal',
               'current_price', 'change_pct',

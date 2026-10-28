@@ -34,7 +34,7 @@ function checkChart(mobile, partial=false) {
   const Plotly = {purge(){}, Plots:{resize(){resizeCount++;}}, react(id,traces,l,c){chartTraces=traces;layout=l;config=c;},
     relayout(id,values){lastRelayout=values;if(Object.hasOwn(values,'xaxis.range')) range=values['xaxis.range'];}};
   const context = vm.createContext({document:{body,getElementById:get,createElement:element}, Plotly,
-    window:{STOCK_DATA:{matches:[stock,stock2],waiting_matches:[],bull_confirmation_matches:[stock],consolidation_breakout_matches:[stock2],candles:{TEST:bars,TEST2:bars},date:'2026-09-29',built_at:'2026-09-29',min_volume_lots:1500},
+    window:{STOCK_DATA:{matches:[stock,stock2],waiting_matches:[],bull_confirmation_matches:[stock],consolidation_breakout_matches:[stock2],kd_macd_institutional_matches:[{...stock,kd_golden_cross:true,macd_red_growing:true,institutional_buy_lots:100,institutional_buy_as_of:'2026-09-28'}],candles:{TEST:bars,TEST2:bars},date:'2026-09-29',built_at:'2026-09-29',min_volume_lots:1500},
       Plotly,addEventListener(){},matchMedia(){return {matches:mobile,addEventListener(){}};}}});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../pages/app.js'),'utf8'), context);
   assert.equal(get('rows').children[0].children[3].textContent,'#2 · 62.5');
@@ -43,6 +43,10 @@ function checkChart(mobile, partial=false) {
   assert.equal(get('rows').children[0].children[0].children[0].textContent,'TEST Test');
   get('consolidation-breakout-tab').handlers.click();
   assert.equal(get('rows').children[0].children[0].children[0].textContent,'TEST2 Test 2');
+  get('kd-macd-institutional-tab').handlers.click();
+  assert.equal(get('rows').children.length,1);
+  assert.equal(get('rows').children[0].children[0].children[0].textContent,'TEST Test');
+  assert.equal(get('kd-macd-institutional-count').textContent,'1 檔');
   get('confirmed-tab').handlers.click();
   get('sort').value='composite_score';
   context.render();
